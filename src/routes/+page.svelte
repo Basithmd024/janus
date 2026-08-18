@@ -213,22 +213,13 @@
 
   // ──────────────────────────────────────────────
   // ROBUST ACTIVE CONNECTED DEVICE DERIVATION
+  // Only treats a device as connected if it is explicitly paired and online
   // ──────────────────────────────────────────────
   let activeConnectedDevice = $derived(
     (() => {
-      // 1. Check if any device in pairedDevicesList is online
+      // Check if any device in pairedDevicesList is currently online
       const onlinePaired = pairedDevicesList.find((d) => d.online);
       if (onlinePaired) return onlinePaired;
-
-      // 2. Check if any discovered device is paired
-      const pairedDiscovered = discoveredDevices.find((d) => d.paired);
-      if (pairedDiscovered) return { ...pairedDiscovered, online: true, added_at: 0 };
-
-      // 3. Check if any remote device was discovered
-      const remoteDiscovered = discoveredDevices.find(
-        (d) => d.name && d.name !== localIdentity?.name && !d.name.toLowerCase().includes("macbook")
-      );
-      if (remoteDiscovered) return { ...remoteDiscovered, online: true, added_at: 0 };
 
       return null;
     })()

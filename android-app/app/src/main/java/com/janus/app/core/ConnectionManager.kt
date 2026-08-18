@@ -169,6 +169,13 @@ class ConnectionManager(
                             savePairedDevice(serverFingerprint)
                         }
                         onPairingResult?.invoke(true, null)
+                    } else if (packet.type == "device.unpaired") {
+                        val serverFingerprint = packet.payload?.get("fingerprint")?.asString
+                        if (serverFingerprint != null) {
+                            removePairedDevice(serverFingerprint)
+                        }
+                        Log.d("JanusConnection", "Device was unpaired by host. Disconnecting.")
+                        disconnect()
                     }
 
                     onPacketReceived(packet)

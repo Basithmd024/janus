@@ -86,6 +86,31 @@ async fn unpair_device(
     let path = state.config_dir.join("paired_devices.json");
     let file_content = serde_json::to_string_pretty(&devices).map_err(|e| e.to_string())?;
     std::fs::write(path, file_content).map_err(|e| e.to_string())?;
+
+    // Clear from active devices
+    {
+        let mut active = state.active_devices.lock().unwrap();
+        active.retain(|_, (_, info)| info.fingerprint != fingerprint);
+    }
+
+    // Send unpair packet to client so phone also resets pairing state
+    {
+        let unpair_packet = crate::protocol::Packet {
+            r#type: "device.unpaired".to_string(),
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            payload: serde_json::json!({ "fingerprint": fingerprint }),
+        };
+        if let Ok(json) = serde_json::to_string(&unpair_packet) {
+            let clients = state.active_ws_clients.lock().unwrap();
+            for (_id, tx) in clients.iter() {
+                let _ = tx.send(axum::extract::ws::Message::Text(json.clone()));
+            }
+        }
+    }
     
     Ok("Device unpaired successfully".to_string())
 }
