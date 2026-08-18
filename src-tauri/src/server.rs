@@ -364,6 +364,11 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             println!("📡 Received device telemetry: {}", packet.payload);
             let _ = state.app_handle.emit("device-status", packet.payload);
         }
+        "device.ready" => {
+            println!("🟢 Phone confirmed connected and ready: {}", packet.payload);
+            let _ = state.app_handle.emit("device-ready", packet.payload.clone());
+            let _ = state.app_handle.emit("device-status", packet.payload);
+        }
         "device.register" => {
             #[derive(Deserialize)]
             struct RegisterPayload {

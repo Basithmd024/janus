@@ -39,6 +39,7 @@ class ConnectionManager(
         private set
     var isConnecting: Boolean = false
         private set
+    var isAutoConnectPaused: Boolean = false
 
     private var autoReconnectEnabled = true
     private var reconnectRunnable: Runnable? = null
@@ -60,7 +61,13 @@ class ConnectionManager(
         prefs.edit().putStringSet("paired_devices", newSet).apply()
     }
 
+    fun clearAllPairedDevices() {
+        val prefs = context.getSharedPreferences("janus_prefs", Context.MODE_PRIVATE)
+        prefs.edit().remove("paired_devices").apply()
+    }
+
     fun isFingerprintPaired(fingerprint: String): Boolean {
+        if (isAutoConnectPaused) return false
         val prefs = context.getSharedPreferences("janus_prefs", Context.MODE_PRIVATE)
         val pairedDevices = prefs.getStringSet("paired_devices", null)
         return pairedDevices?.contains(fingerprint) == true
@@ -168,13 +175,34 @@ class ConnectionManager(
                         if (serverFingerprint != null) {
                             savePairedDevice(serverFingerprint)
                         }
+                        this@ConnectionManager.isAutoConnectPaused = false
                         onPairingResult?.invoke(true, null)
-                    } else if (packet.type == "device.unpaired") {
-                        val serverFingerprint = packet.payload?.get("fingerprint")?.asString
-                        if (serverFingerprint != null) {
-                            removePairedDevice(serverFingerprint)
+
+                        // Send explicit return confirmation packet: device.ready / device.connected
+                        val readyPayload = JsonObject().apply {
+                            addProperty("status", "connected")
+                            addProperty("device_name", android.os.Build.MODEL)
+                            addProperty("fingerprint", identity.fingerprint)
+                            DiscoveryManager.getLocalWifiIp(context)?.let { addProperty("ip", it) }
+                            addProperty("port", 53318)
                         }
-                        Log.d("JanusConnection", "Device was unpaired by host. Disconnecting.")
+                        val readyPacket = Packet(
+                            type = "device.ready",
+                            id = java.util.UUID.randomUUID().toString(),
+                            timestamp = System.currentTimeMillis() / 1000,
+                            payload = readyPayload
+                        )
+                        ws.send(gson.toJson(readyPacket))
+                        Log.d("JanusConnection", "🟢 Transmitted device.ready confirmation return statement to Mac")
+                    } else if (packet.type == "device.unpaired") {
+                        // Clear paired host from storage and pause auto-connect
+                        val serverFp = packet.payload?.get("fingerprint")?.asString ?: connectedFingerprint
+                        if (serverFp != null) {
+                            removePairedDevice(serverFp)
+                        }
+                        this@ConnectionManager.clearAllPairedDevices()
+                        this@ConnectionManager.isAutoConnectPaused = true
+                        Log.d("JanusConnection", "🛑 Device was unpaired by host. Auto-connect paused. Disconnecting.")
                         disconnect()
                     }
 

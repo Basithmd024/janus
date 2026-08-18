@@ -301,6 +301,11 @@ class JanusService : Service() {
 
     private fun handleIncomingPacket(packet: Packet) {
         when (packet.type) {
+            "device.request_status" -> {
+                readInitialBattery()
+                readInitialSignal()
+                sendTelemetryUpdate()
+            }
             "clipboard.update" -> {
                 val text = packet.payload.get("content")?.asString ?: return
                 Log.d("JanusService", "Received remote clipboard update: ${text.take(50)}")

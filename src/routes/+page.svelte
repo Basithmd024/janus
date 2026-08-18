@@ -526,7 +526,11 @@
       for (const fp of allFingerprints) {
         await invoke("unpair_device", { fingerprint: fp });
       }
-      showToast(`${device.name} forgotten (${allFingerprints.length} pairing(s) removed)`, "info");
+      pairedDevices = pairedDevices.filter(p => !allFingerprints.includes(p.fingerprint));
+      discoveredDevices = discoveredDevices.filter(d => !allFingerprints.includes(d.fingerprint));
+      deviceBattery = null;
+      deviceSignal = null;
+      showToast(`${device.name} forgotten and disconnected`, "info");
       await loadPairedDevices();
     } catch (e) {
       showToast("Failed to unpair device: " + e, "error");
@@ -960,6 +964,22 @@
       deviceSignal = payload.signal_level ?? deviceSignal;
     });
     unlisteners.push(unlistenDeviceStatus);
+
+    const unlistenDeviceRegistered = await listen<any>("device-registered", async (event) => {
+      console.log("🟢 Device registered:", event.payload);
+      await loadPairedDevices();
+    });
+    unlisteners.push(unlistenDeviceRegistered);
+
+    const unlistenDeviceReady = await listen<any>("device-ready", async (event) => {
+      console.log("🟢 Device confirmed ready:", event.payload);
+      await loadPairedDevices();
+      const payload = event.payload;
+      if (payload.battery_level !== undefined) deviceBattery = payload.battery_level;
+      if (payload.is_charging !== undefined) deviceIsCharging = payload.is_charging;
+      if (payload.signal_level !== undefined) deviceSignal = payload.signal_level;
+    });
+    unlisteners.push(unlistenDeviceReady);
 
     const unlistenCallsList = await listen<any>("calls-list", (event) => {
       const payload = event.payload;
@@ -1457,7 +1477,7 @@
               Stop Mirroring
             </button>
           {:else}
-            {#if pairedDevicesList.some(d => d.online)}
+            {#if isDeviceConnected}
               <div class="empty-state">
                 <div class="empty-icon">
                   <svg width="56" height="56" viewBox="0 0 24 24" fill="none"><rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M8 21h8M12 17v4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
