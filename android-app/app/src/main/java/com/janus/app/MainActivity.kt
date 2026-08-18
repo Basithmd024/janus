@@ -25,6 +25,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.animation.core.*
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -229,8 +231,14 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    var showIntroSplash by remember { mutableStateOf(true) }
                     var isAuthenticated by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser != null) }
                     var forceLocalMode by remember { mutableStateOf(true) }
+
+                    if (showIntroSplash) {
+                        IntroMotionScreen(onFinish = { showIntroSplash = false })
+                        return@Surface
+                    }
                     
                     DisposableEffect(Unit) {
                         val listener = FirebaseAuth.AuthStateListener { auth ->
@@ -257,6 +265,149 @@ class MainActivity : ComponentActivity() {
         notificationAccessEnabled.value = isNotificationServiceEnabled()
         isScreenMirroringActive.value = com.janus.app.core.JanusScreenCastService.isRunning
         accessibilityEnabled.value = isAccessibilityServiceEnabled()
+    }
+
+    @Composable
+    fun IntroMotionScreen(onFinish: () -> Unit) {
+        LaunchedEffect(Unit) {
+            kotlinx.coroutines.delay(2300L)
+            onFinish()
+        }
+
+        val infiniteTransition = rememberInfiniteTransition(label = "intro")
+        val pulseScale by infiniteTransition.animateFloat(
+            initialValue = 0.85f,
+            targetValue = 1.35f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1800, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "pulseScale"
+        )
+        val pulseAlpha by infiniteTransition.animateFloat(
+            initialValue = 0.65f,
+            targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1800, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "pulseAlpha"
+        )
+
+        var isVisible by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            isVisible = true
+        }
+
+        val floatAnim by animateFloatAsState(
+            targetValue = if (isVisible) 1f else 0f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow
+            ),
+            label = "springEntrance"
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF090514))
+                .clickable { onFinish() },
+            contentAlignment = Alignment.Center
+        ) {
+            // Radial Glow Background Pulse
+            Box(
+                modifier = Modifier
+                    .size(240.dp)
+                    .graphicsLayer {
+                        scaleX = pulseScale
+                        scaleY = pulseScale
+                        alpha = pulseAlpha
+                    }
+                    .background(Color(0xFFC084FC), androidx.compose.foundation.shape.CircleShape)
+            )
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier
+                    .padding(24.dp)
+                    .graphicsLayer {
+                        scaleX = floatAnim
+                        scaleY = floatAnim
+                        alpha = floatAnim
+                    }
+            ) {
+                // Glassmorphic Logo Card
+                Card(
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1535)),
+                    border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFC084FC)),
+                    modifier = Modifier.size(96.dp)
+                ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Janus Bridge",
+                            tint = Color(0xFFC084FC),
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                }
+
+                // Title with Spacing
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "J A N U S",
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                        letterSpacing = 6.sp
+                    )
+                    Text(
+                        text = "Quantum Continuity Bridge",
+                        fontSize = 13.sp,
+                        color = Color(0xFFC084FC),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                // HUD Badges
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    BadgePill(text = "⚡ TLS 1.3", color = Color(0xFF38BDF8))
+                    BadgePill(text = "🔒 SHA-256", color = Color(0xFFC084FC))
+                    BadgePill(text = "0ms P2P", color = Color(0xFF34D399))
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Tap anywhere to launch",
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
+            }
+        }
+    }
+
+    @Composable
+    fun BadgePill(text: String, color: Color) {
+        Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(100.dp),
+            color = color.copy(alpha = 0.12f),
+            border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.35f))
+        ) {
+            Text(
+                text = text,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = color,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+            )
+        }
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
