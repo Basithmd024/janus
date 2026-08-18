@@ -344,6 +344,22 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             println!("📞 Call state updated on Android: {}", state_str);
             let _ = state.app_handle.emit("call-state", packet.payload);
         }
+        "calls.list" => {
+            let call_count = packet.payload.get("calls")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            println!("📞 Received call history from Android: {} calls", call_count);
+            let _ = state.app_handle.emit("calls-list", packet.payload);
+        }
+        "sms.list" => {
+            let sms_count = packet.payload.get("messages")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            println!("💬 Received SMS messages from Android: {} messages", sms_count);
+            let _ = state.app_handle.emit("sms-list", packet.payload);
+        }
         "device.status" => {
             println!("📡 Received device telemetry: {}", packet.payload);
             let _ = state.app_handle.emit("device-status", packet.payload);
@@ -431,12 +447,6 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                     eprintln!("Failed to parse RegisterPayload from packet: {}. Error: {}", packet.payload, e);
                 }
             }
-        }
-        "calls.list" => {
-            let _ = state.app_handle.emit("calls-list", packet.payload);
-        }
-        "sms.list" => {
-            let _ = state.app_handle.emit("sms-list", packet.payload);
         }
         _ => {}
     }

@@ -33,6 +33,7 @@ pub struct FileMetadata {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PrepareUploadResponse {
     pub session_id: String,
+    #[serde(default)]
     pub accepted_files: Vec<String>, // List of file names/hashes accepted
 }
 

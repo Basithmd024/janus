@@ -197,6 +197,9 @@ class HttpServerManager(
                 val respObj = JsonObject().apply {
                     addProperty("session_id", sessionId)
                     addProperty("status", "ready")
+                    val acceptedArr = com.google.gson.JsonArray()
+                    filesList.forEach { acceptedArr.add(it.name) }
+                    add("accepted_files", acceptedArr)
                 }
                 val respText = gson.toJson(respObj)
                 val respBytes = respText.toByteArray()

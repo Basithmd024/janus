@@ -1573,7 +1573,7 @@
         
         <div class="files-workspace">
           <div class="dropzone-grid">
-            {#each pairedDevicesList.filter(d => d.online) as device}
+            {#each availableFileDropDevices as device}
               <div
                 class="dropzone {isDragOver && dragTargetDevice?.fingerprint === device.fingerprint ? 'drag-active' : ''}"
                 ondragover={(e) => { handleDragOver(e); dragTargetDevice = device; }}
@@ -1593,7 +1593,7 @@
               </div>
             {/each}
             
-            {#if pairedDevicesList.filter(d => d.online).length === 0}
+            {#if availableFileDropDevices.length === 0}
               <div class="empty-state" style="width:100%">
                 <div class="empty-icon">
                   <svg width="56" height="56" viewBox="0 0 24 24" fill="none"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" stroke="currentColor" stroke-width="1.2"/></svg>
