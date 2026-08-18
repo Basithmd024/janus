@@ -76,10 +76,12 @@ class DiscoveryManager(
                     }
                 }
 
-                // Fallback: search explicitly for wlan interface
+                // Fallback: search explicitly for wlan, hotspot (ap/softap/swlan), ethernet, and USB tethering interfaces
                 val interfaces = java.util.Collections.list(NetworkInterface.getNetworkInterfaces())
                 for (iface in interfaces) {
-                    if (iface.name.startsWith("wlan", ignoreCase = true) || iface.name.startsWith("eth", ignoreCase = true)) {
+                    val name = iface.name.lowercase()
+                    if (name.startsWith("wlan") || name.startsWith("ap") || name.startsWith("softap") || 
+                        name.startsWith("swlan") || name.startsWith("eth") || name.startsWith("rndis")) {
                         for (addr in java.util.Collections.list(iface.inetAddresses)) {
                             if (!addr.isLoopbackAddress && addr is Inet4Address) {
                                 return addr.hostAddress
