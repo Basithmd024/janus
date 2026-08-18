@@ -1,0 +1,74 @@
+# CodeRabbit AI Configuration for Janus Ecosystem Bridge
+# https://docs.coderabbit.ai/
+
+version: "2"
+language: "en-US"
+early_access: true
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+      - "master"
+      - "develop"
+
+  # Path filters
+  path_filters:
+    - "!node_modules/**"
+    - "!**/target/**"
+    - "!android-app/**/build/**"
+    - "!**/*.lock"
+    - "!**/*.json"
+    - "!**/*.svg"
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.dex"
+
+  # Custom security and architecture instructions for CodeRabbit AI
+  instructions: |
+    You are inspecting Janus — a high-performance cross-platform device bridge connecting macOS (Tauri v2 + Rust + Svelte 5) with Android (Kotlin + Jetpack Compose + CameraX).
+
+    Enforce these core guidelines strictly:
+    1. **Security & Cryptography**:
+       - Verify that all WebSockets use TLS (`wss://`) and all REST endpoints use HTTPS (`https://`).
+       - Ensure certificate fingerprints use SHA-256 and are never truncated or validated with weak equality.
+       - Ensure NO secrets, private keys (`*.key`, `*.pem`), passwords, or API credentials are ever committed or logged in plaintext.
+       - Verify that buffer allocations for file streaming and audio/video framing are bounded to prevent Denial-of-Service / Memory Exhaustion.
+    2. **Rust & Tauri Safety**:
+       - Disallow `unwrap()` in non-test production code. Prefer proper `Result<T, E>` / `Option<T>` handling with `?` or `unwrap_or_default()`.
+       - Check mutex guards (`std::sync::Mutex`, `tokio::sync::Mutex`) for potential deadlocks or long lock durations across `.await` points.
+       - Ensure all Tauri IPC commands have proper parameter deserialization validation.
+    3. **Android & Kotlin Architecture**:
+       - Ensure coroutines are scoped safely (`viewModelScope`, `lifecycleScope`, `CoroutineScope(SupervisorJob() + Dispatchers.IO)`).
+       - Ensure background services properly release `WakeLock`, `WifiLock`, and `MediaProjection` handles upon disconnect or termination.
+       - Ensure `CameraX` analyzers close `imageProxy` in a `finally` block to prevent camera preview freezing.
+       - Verify that all sensitive permissions (`CAMERA`, `READ_PHONE_STATE`, `POST_NOTIFICATIONS`) are checked at runtime with friendly degradation.
+    4. **Svelte 5 & UI State**:
+       - Enforce Svelte 5 Runes syntax (`$state`, `$derived`, `$effect`, `$props`).
+       - Ensure event listeners (`listen()`) are cleaned up properly in `onDestroy()` to prevent memory leaks in the Webview.
+    5. **Testing**:
+       - Suggest relevant unit or integration tests for any newly added protocol packets, codec frames, or crypto functions.
+
+  tools:
+    ast-grep:
+      enabled: true
+    clippy:
+      enabled: true
+    shellcheck:
+      enabled: true
+    markdownlint:
+      enabled: true
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
