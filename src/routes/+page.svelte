@@ -65,6 +65,10 @@
   let showOnboardingModal = $state<boolean>(false);
 
   // Persistent Notification DB State
+  // Screen Mirroring Display Modes
+  let isMirrorFullscreen = $state<boolean>(false);
+  let isSplitScreenMode = $state<boolean>(false);
+  let isFramelessMirror = $state<boolean>(true);
   let persistentNotifications = $state<any[]>([]);
   let selectedAppFilter = $state<string>("All");
 
@@ -1327,17 +1331,22 @@
       const url = URL.createObjectURL(blob);
       
       const canvas = document.getElementById("screencast-canvas") as HTMLCanvasElement | null;
-      if (canvas) {
-        const ctx = canvas.getContext("2d");
-        const img = new Image();
-        img.onload = () => {
+      const canvasFs = document.getElementById("screencast-canvas-fullscreen") as HTMLCanvasElement | null;
+      const img = new Image();
+      img.onload = () => {
+        if (canvas) {
           canvas.width = img.width;
           canvas.height = img.height;
-          ctx?.drawImage(img, 0, 0);
-          URL.revokeObjectURL(url);
-        };
-        img.src = url;
-      }
+          canvas.getContext("2d")?.drawImage(img, 0, 0);
+        }
+        if (canvasFs) {
+          canvasFs.width = img.width;
+          canvasFs.height = img.height;
+          canvasFs.getContext("2d")?.drawImage(img, 0, 0);
+        }
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
     });
     unlisteners.push(unlistenScreencast);
 
@@ -1980,73 +1989,142 @@
     <!-- ═══════ MIRRORING TAB ═══════ -->
     {:else if activeTab === 'mirroring'}
       <div class="tab-panel mirroring-tab">
-        <div class="panel-header">
-          <h2>Screen Mirror</h2>
-          <p class="panel-desc">Operate your mobile device in real-time. Clicks and drags on the screen are sent directly to your phone.</p>
+        <div class="panel-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <h2>Screen Mirroring &amp; Remote Control</h2>
+            <p class="panel-desc">Operate your mobile device in real-time. Clicks and drags are sent directly to your phone.</p>
+          </div>
+          
+          {#if isMirroring}
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button
+                class="btn btn-sm {isSplitScreenMode ? 'btn-primary' : 'btn-outline'}"
+                onclick={() => isSplitScreenMode = !isSplitScreenMode}
+              >
+                {isSplitScreenMode ? 'Full Width' : '50/50 Split View'}
+              </button>
+
+              <button
+                class="btn btn-sm {isFramelessMirror ? 'btn-primary' : 'btn-outline'}"
+                onclick={() => isFramelessMirror = !isFramelessMirror}
+              >
+                {isFramelessMirror ? 'Frameless' : 'Show Bezel'}
+              </button>
+
+              <button
+                class="btn btn-sm btn-primary"
+                onclick={() => isMirrorFullscreen = true}
+              >
+                Full Screen ↗
+              </button>
+              
+              <button class="btn btn-sm btn-danger-subtle" onclick={stopMirroring}>
+                Stop Mirroring
+              </button>
+            </div>
+          {/if}
         </div>
         
         <div class="mirror-workspace">
           {#if isMirroring}
-            <div class="phone-chassis">
-              <!-- Volume Keys -->
-              <div class="chassis-vol-up"></div>
-              <div class="chassis-vol-down"></div>
-              <!-- Power Key -->
-              <div class="chassis-power"></div>
-              
-              <div class="chassis-inner">
-                <!-- Punch-hole camera -->
-                <div class="punch-hole"></div>
-                <!-- Status Bar Mockup -->
-                <div class="phone-status-bar">
-                  <span class="status-time">{currentLocalTime}</span>
-                  <div class="status-icons">
-                    {#if deviceSignal !== null}
-                      <span class="signal-bars">
-                        <span class="bar {deviceSignal >= 1 ? 'filled' : ''}"></span>
-                        <span class="bar {deviceSignal >= 2 ? 'filled' : ''}"></span>
-                        <span class="bar {deviceSignal >= 3 ? 'filled' : ''}"></span>
-                        <span class="bar {deviceSignal >= 4 ? 'filled' : ''}"></span>
-                      </span>
-                      <span class="status-network" style="margin-right: 4px;">LTE</span>
-                    {:else}
-                      <span class="status-network" style="margin-right: 4px; color: var(--text-muted); font-size: 10px;">Offline</span>
-                    {/if}
-                    <svg class="status-icon" width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="2" y="7" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M22 11v2M6 10h8v4H6z" fill="currentColor"/></svg>
-                    <span class="status-battery">{deviceBattery !== null ? `${deviceBattery}%${deviceIsCharging ? '🔌' : ''}` : 'Not Connected'}</span>
+            <div class="mirror-layout-wrapper {isSplitScreenMode ? 'split-50-layout' : 'single-layout'}">
+              <!-- Left 50% / Center Stream Column -->
+              <div class="stream-column {isFramelessMirror ? 'frameless-column' : ''}">
+                <div class="{isFramelessMirror ? 'frameless-viewport' : 'phone-chassis'}">
+                  {#if !isFramelessMirror}
+                    <!-- Volume Keys -->
+                    <div class="chassis-vol-up"></div>
+                    <div class="chassis-vol-down"></div>
+                    <!-- Power Key -->
+                    <div class="chassis-power"></div>
+                    
+                    <div class="chassis-inner">
+                      <!-- Punch-hole camera -->
+                      <div class="punch-hole"></div>
+                      <!-- Status Bar Mockup -->
+                      <div class="phone-status-bar">
+                        <span class="status-time">{currentLocalTime}</span>
+                        <div class="status-icons">
+                          {#if deviceSignal !== null}
+                            <span class="signal-bars">
+                              <span class="bar {deviceSignal >= 1 ? 'filled' : ''}"></span>
+                              <span class="bar {deviceSignal >= 2 ? 'filled' : ''}"></span>
+                              <span class="bar {deviceSignal >= 3 ? 'filled' : ''}"></span>
+                              <span class="bar {deviceSignal >= 4 ? 'filled' : ''}"></span>
+                            </span>
+                            <span class="status-network" style="margin-right: 4px;">LTE</span>
+                          {/if}
+                          <span class="status-battery">{deviceBattery !== null ? `${deviceBattery}%` : ''}</span>
+                        </div>
+                      </div>
+                      <!-- Screen -->
+                      <div class="phone-viewport">
+                        <canvas
+                          id="screencast-canvas"
+                          class="mirror-canvas"
+                          onpointerdown={handlePointerDown}
+                          onpointerup={handlePointerUp}
+                          style="touch-action: none;"
+                        ></canvas>
+                      </div>
+                      <!-- Gesture bar -->
+                      <div class="gesture-bar">
+                        <div class="gesture-pill"></div>
+                      </div>
+                    </div>
+                  {:else}
+                    <!-- Frameless Clean Canvas -->
+                    <div class="frameless-canvas-box">
+                      <canvas
+                        id="screencast-canvas"
+                        class="mirror-canvas frameless-canvas"
+                        onpointerdown={handlePointerDown}
+                        onpointerup={handlePointerUp}
+                        style="touch-action: none;"
+                      ></canvas>
+                    </div>
+                  {/if}
+
+                  <!-- Remote Navigation Controls Bar -->
+                  <div class="nav-keys floating-nav-keys">
+                    <button class="nav-key" onclick={() => sendRemoteKey("back")} title="Back">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <button class="nav-key home-key" onclick={() => sendRemoteKey("home")} title="Home">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg>
+                    </button>
                   </div>
                 </div>
-                <!-- Screen -->
-                <div class="phone-viewport">
-                  <canvas
-                    id="screencast-canvas"
-                    class="mirror-canvas"
-                    onpointerdown={handlePointerDown}
-                    onpointerup={handlePointerUp}
-                    style="touch-action: none;"
-                  ></canvas>
-                </div>
-                <!-- Gesture bar -->
-                <div class="gesture-bar">
-                  <div class="gesture-pill"></div>
-                </div>
               </div>
-              
-              <!-- Navigation Soft Keys (outside bezel) -->
-              <div class="nav-keys">
-                <button class="nav-key" onclick={() => sendRemoteKey("back")} title="Back">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <button class="nav-key home-key" onclick={() => sendRemoteKey("home")} title="Home">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg>
-                </button>
-              </div>
+
+              <!-- Right 50% Workspace Column (When 50/50 Split View is Active) -->
+              {#if isSplitScreenMode}
+                <div class="split-workspace-column">
+                  <div class="split-card">
+                    <h3>Notifications Stream</h3>
+                    <div class="split-notif-list">
+                      {#each persistentNotifications.slice(0, 5) as notif}
+                        <div class="split-notif-item">
+                          <strong>{notif.app_name || 'App'}</strong>: {notif.title}
+                          <p>{notif.body || notif.text}</p>
+                        </div>
+                      {/each}
+                      {#if persistentNotifications.length === 0}
+                        <p class="empty-sub">No recent notifications</p>
+                      {/if}
+                    </div>
+                  </div>
+
+                  <div class="split-card">
+                    <h3>Quick File Drop</h3>
+                    <p class="empty-sub">Drag files to send instantly while mirroring</p>
+                    <button class="btn btn-sm btn-primary" onclick={() => triggerFileSelect(availableFileDropDevices[0])} disabled={availableFileDropDevices.length === 0}>
+                      Send File...
+                    </button>
+                  </div>
+                </div>
+              {/if}
             </div>
-            
-            <button class="btn btn-danger-subtle stop-btn" onclick={stopMirroring}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="6" y="6" width="12" height="12" rx="1" stroke="currentColor" stroke-width="2"/></svg>
-              Stop Mirroring
-            </button>
           {:else}
             {#if isDeviceConnected}
               <div class="empty-state">
@@ -5219,6 +5297,158 @@
     font-weight: 500;
   }
 
+
+  /* ════════════════════════════════════════════════
+     SCREEN MIRRORING DISPLAY MODES & 50/50 SPLIT
+     ════════════════════════════════════════════════ */
+  .mirror-layout-wrapper {
+    display: flex;
+    width: 100%;
+    gap: 1.5rem;
+    transition: all 0.3s ease;
+  }
+
+  .split-50-layout .stream-column {
+    flex: 0 0 50%;
+    max-width: 50%;
+  }
+
+  .split-workspace-column {
+    flex: 0 0 50%;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .split-card {
+    background: var(--bg-elevated, rgba(30, 41, 59, 0.5));
+    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+    border-radius: 16px;
+    padding: 1.25rem;
+    backdrop-filter: blur(12px);
+  }
+
+  .split-card h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary, #f8fafc);
+  }
+
+  .split-notif-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .split-notif-item {
+    background: rgba(0, 0, 0, 0.2);
+    border-left: 3px solid #3b82f6;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    color: var(--text-primary, #ffffff);
+  }
+
+  .split-notif-item p {
+    margin: 4px 0 0 0;
+    font-size: 0.75rem;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+  }
+
+  .frameless-canvas-box {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 16px;
+    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+    padding: 12px;
+    overflow: hidden;
+  }
+
+  .frameless-canvas {
+    max-height: 75vh;
+    max-width: 100%;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
+
+  .floating-nav-keys {
+    margin-top: 12px;
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+  }
+
+  /* Fullscreen Mirror Overlay */
+  .fullscreen-mirror-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #09090b;
+    z-index: 999999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    box-sizing: border-box;
+  }
+
+  .fullscreen-header {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .fullscreen-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #f8fafc;
+  }
+
+  .live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 8px #10b981;
+  }
+
+  .fullscreen-canvas-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    overflow: hidden;
+    margin: 12px 0;
+  }
+
+  .fullscreen-canvas {
+    max-height: 85vh;
+    max-width: 100%;
+    border-radius: 16px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+  }
+
+  .fullscreen-nav-bar {
+    display: flex;
+    gap: 20px;
+    background: rgba(30, 41, 59, 0.8);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 30px;
+    padding: 8px 24px;
+  }
+
 </style>
 
 
@@ -5262,6 +5492,43 @@
 
 
 
+
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- FULLSCREEN SCREEN MIRRORING OVERLAY                     -->
+<!-- ═══════════════════════════════════════════════════════ -->
+{#if isMirrorFullscreen && isMirroring}
+  <div class="fullscreen-mirror-overlay">
+    <div class="fullscreen-header">
+      <div class="fullscreen-title">
+        <span class="live-dot"></span>
+        <span>Janus Live Mirror — {profileDeviceName}</span>
+      </div>
+      <button class="btn btn-sm btn-outline" onclick={() => isMirrorFullscreen = false}>
+        Exit Full Screen ✕
+      </button>
+    </div>
+
+    <div class="fullscreen-canvas-container">
+      <canvas
+        id="screencast-canvas-fullscreen"
+        class="fullscreen-canvas"
+        onpointerdown={handlePointerDown}
+        onpointerup={handlePointerUp}
+        style="touch-action: none;"
+      ></canvas>
+    </div>
+
+    <div class="fullscreen-nav-bar">
+      <button class="nav-key" onclick={() => sendRemoteKey("back")} title="Back">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="nav-key home-key" onclick={() => sendRemoteKey("home")} title="Home">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+    </div>
+  </div>
+{/if}
 
 <!-- ═══════════════════════════════════════════════════════ -->
 <!-- IN-APP UPDATE MODAL                                     -->
