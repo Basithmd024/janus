@@ -102,6 +102,14 @@ class JanusScreenCastService : Service() {
     }
 
     private fun startScreenCapture() {
+        try {
+            val blackoutIntent = Intent(this, com.janus.app.BlackoutActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(blackoutIntent)
+        } catch (e: Exception) {
+            Log.w("JanusScreenCast", "Failed to launch BlackoutActivity", e)
+        }
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val metrics = DisplayMetrics()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -199,6 +207,7 @@ class JanusScreenCastService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        com.janus.app.BlackoutActivity.instance?.finish()
         isRunning = false
         virtualDisplay?.release()
         virtualDisplay = null
