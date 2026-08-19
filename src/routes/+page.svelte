@@ -52,6 +52,21 @@
   let qrCanvas = $state<HTMLCanvasElement | null>(null);
   let homeQrCanvas = $state<HTMLCanvasElement | null>(null);
 
+  async function ensureIdentityAndPin() {
+    try {
+      if (!localIdentity) {
+        localIdentity = await invoke<Device>("get_identity");
+      }
+      if (!pairingPin) {
+        pairingPin = await invoke<string>("get_pairing_pin");
+      }
+      if (homeQrCanvas) renderQr(homeQrCanvas, 180);
+      if (qrCanvas) renderQr(qrCanvas, 200);
+    } catch (e) {
+      console.warn("Failed to ensure identity/pin:", e);
+    }
+  }
+
   function getQrPayload(): string {
     if (!localIdentity) return "";
     return JSON.stringify({
@@ -88,11 +103,11 @@
   }
 
   function qrAction(node: HTMLCanvasElement, size = 180) {
-    const tryRender = () => {
-      renderQr(node, size);
+    const tryRender = async () => {
       if (!localIdentity || !pairingPin) {
-        setTimeout(tryRender, 250);
+        await ensureIdentityAndPin();
       }
+      renderQr(node, size);
     };
     tryRender();
     return {
