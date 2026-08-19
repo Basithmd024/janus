@@ -1272,6 +1272,50 @@
       smsMessages = payload.sms || [];
     });
     unlisteners.push(unlistenSmsList);
+
+    const unlistenSelectTab = await listen<string>("select-tab", (event) => {
+      if (event.payload) selectTab(event.payload as any);
+    });
+    unlisteners.push(unlistenSelectTab);
+
+    const unlistenFileStart = await listen<any>("file-transfer-start", (event) => {
+      const payload = event.payload;
+      const targetDev = activeConnectedDevice;
+      activeFileTransfer = {
+        name: payload.name || "File",
+        sizeFormatted: formatBytes(payload.size || 0),
+        progress: 35,
+        status: "sending",
+        direction: "outgoing",
+        targetName: targetDev?.name || "Mobile"
+      };
+      const progTimer = setInterval(() => {
+        if (activeFileTransfer && activeFileTransfer.status === "sending" && activeFileTransfer.progress < 90) {
+          activeFileTransfer.progress += 15;
+        }
+      }, 150);
+      setTimeout(() => clearInterval(progTimer), 3000);
+    });
+    unlisteners.push(unlistenFileStart);
+
+    const unlistenFileComplete = await listen<any>("file-transfer-complete", (event) => {
+      const payload = event.payload;
+      const targetDev = activeConnectedDevice;
+      activeFileTransfer = {
+        name: payload.name || "File",
+        sizeFormatted: formatBytes(payload.size || 0),
+        progress: 100,
+        status: "completed",
+        direction: "outgoing",
+        targetName: targetDev?.name || "Mobile"
+      };
+      setTimeout(() => {
+        if (activeFileTransfer && activeFileTransfer.status === "completed") {
+          activeFileTransfer = null;
+        }
+      }, 4000);
+    });
+    unlisteners.push(unlistenFileComplete);
   });
 
   onDestroy(() => {
@@ -1293,7 +1337,32 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
 </svelte:head>
 
-<div class="janus-layout">
+<div
+  class="janus-layout"
+  ondragover={handleDragOver}
+  ondragleave={handleDragLeave}
+  ondrop={(e) => handleDrop(e, activeConnectedDevice)}
+  role="region"
+  aria-label="Janus Ecosystem Workspace"
+>
+  {#if isDragOver}
+    <div
+      class="global-drag-overlay"
+      ondragover={handleDragOver}
+      ondragleave={handleDragLeave}
+      ondrop={(e) => handleDrop(e, activeConnectedDevice)}
+      role="region"
+      aria-label="Drop files to send to mobile"
+    >
+      <div class="drag-drop-card">
+        <div class="drag-icon-glow">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none"><path d="M7 10V6a5 5 0 0110 0v4m-5 4v4m-3-2l3 3 3-3M5 10h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2v-8a2 2 0 012-2z" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>Drop Files Anywhere to Beam to Mobile</h3>
+        <p>Release to transfer immediately to <strong>{activeConnectedDevice?.name || "your connected phone"}</strong></p>
+      </div>
+    </div>
+  {/if}
   <!-- Toast notification list -->
   <div class="toast-container">
     {#each toasts as toast (toast.id)}
@@ -4510,6 +4579,76 @@
   @keyframes scaleIn {
     from { opacity: 0; transform: scale(0.95); }
     to { opacity: 1; transform: scale(1); }
+  }
+
+
+  /* Global Window Drag-and-Drop Overlay */
+  .global-drag-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .drag-drop-card {
+    background: var(--bg-card, #ffffff);
+    border: 2px dashed #2563eb;
+    border-radius: 24px;
+    padding: 48px 64px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 16px;
+    box-shadow: 0 25px 50px -12px rgba(37, 99, 235, 0.25);
+    transform: scale(1);
+    animation: popIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .drag-icon-glow {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(37, 99, 235, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #2563eb;
+    animation: bounceSlow 2s infinite ease-in-out;
+  }
+
+  @keyframes bounceSlow {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(0.92); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  .drag-drop-card h3 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text-primary, #0f172a);
+    margin: 0;
+  }
+
+  .drag-drop-card p {
+    font-size: 0.95rem;
+    color: var(--text-secondary, #64748b);
+    margin: 0;
+  }
+
+  .drag-drop-card p strong {
+    color: #2563eb;
   }
 
 </style>

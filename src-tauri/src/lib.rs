@@ -1,9 +1,12 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
+use tauri_plugin_dialog::DialogExt;
 use std::collections::HashMap;
+use uuid::Uuid;
+use crate::server::show_macos_notification;
 
 mod protocol;
 mod security;
@@ -117,12 +120,12 @@ async fn unpair_device(
     Ok("Device unpaired successfully".to_string())
 }
 
-#[tauri::command]
-async fn send_file_to_device(
-    _state: State<'_, SharedState>,
+async fn send_file_inner(
+    _state: &SharedState,
     device_ip: String,
     device_port: u16,
     file_path: String,
+    app_handle: &AppHandle,
 ) -> Result<String, String> {
     let path = PathBuf::from(&file_path);
     if !path.exists() {
@@ -138,7 +141,7 @@ async fn send_file_to_device(
         .map_err(|e| e.to_string())?
         .len();
 
-    // Compute SHA-256 by streaming — never loads full file into memory
+    // Compute SHA-256 by streaming
     let hash_hex = {
         use std::io::Read;
         let mut file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
@@ -154,6 +157,13 @@ async fn send_file_to_device(
     };
 
     println!("Preparing to send file {} ({} bytes) to {}:{}", file_name, file_size, device_ip, device_port);
+
+    // Notify frontend to show animated HUD
+    let _ = app_handle.emit("file-transfer-start", serde_json::json!({
+        "name": file_name,
+        "size": file_size,
+        "direction": "outgoing"
+    }));
 
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
@@ -184,7 +194,6 @@ async fn send_file_to_device(
         device_ip, device_port, prepare_resp.session_id, hash_hex
     );
 
-    // Read file bytes for upload (Mac has plenty of RAM)
     let file_bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
 
     let _send_resp = client.post(&upload_url)
@@ -195,7 +204,27 @@ async fn send_file_to_device(
         .map_err(|e| format!("Failed to send file data: {}", e))?;
 
     println!("Successfully sent file {} to device", file_name);
+
+    // Notify frontend of completion
+    let _ = app_handle.emit("file-transfer-complete", serde_json::json!({
+        "name": file_name,
+        "size": file_size,
+        "direction": "outgoing"
+    }));
+
+    show_macos_notification("Janus File Transfer", &format!("Successfully sent {} to mobile!", file_name));
     Ok("File sent successfully".to_string())
+}
+
+#[tauri::command]
+async fn send_file_to_device(
+    state: State<'_, SharedState>,
+    handle: AppHandle,
+    device_ip: String,
+    device_port: u16,
+    file_path: String,
+) -> Result<String, String> {
+    send_file_inner(&state, device_ip, device_port, file_path, &handle).await
 }
 
 #[tauri::command]
@@ -705,19 +734,29 @@ pub fn run() {
             // Manage global state
             app.manage(state);
 
-            // Create native macOS Menu Bar Status Item (Tray Icon)
-            if let (Ok(status_item), Ok(sep1), Ok(show_item), Ok(sep2), Ok(quit_item)) = (
-                MenuItemBuilder::with_id("status", "📱 Janus: Ecosystem Bridge Active").enabled(false).build(app),
+            // Create native macOS Menu Bar Status Item (Tray Icon) with Quick Experience Controls
+            if let (Ok(status_item), Ok(sep1), Ok(send_file_item), Ok(clip_item), Ok(mirror_item), Ok(downloads_item), Ok(sep2), Ok(show_item), Ok(sep3), Ok(quit_item)) = (
+                MenuItemBuilder::with_id("status", "📱 Janus: Real-Time Bridge Active").enabled(false).build(app),
                 PredefinedMenuItem::separator(app),
-                MenuItemBuilder::with_id("show", "Open Dashboard").build(app),
+                MenuItemBuilder::with_id("send_file", "📁 Quick Send Files to Mobile...").build(app),
+                MenuItemBuilder::with_id("clipboard_sync", "📋 Sync Clipboard Now").build(app),
+                MenuItemBuilder::with_id("mirror", "📲 Start Screen Mirroring").build(app),
+                MenuItemBuilder::with_id("open_downloads", "📂 Open Received Files Folder").build(app),
                 PredefinedMenuItem::separator(app),
-                MenuItemBuilder::with_id("quit", "Quit Janus").build(app),
+                MenuItemBuilder::with_id("show", "🌐 Open Janus Dashboard").build(app),
+                PredefinedMenuItem::separator(app),
+                MenuItemBuilder::with_id("quit", "⏻ Quit Janus").build(app),
             ) {
                 if let Ok(tray_menu) = MenuBuilder::new(app)
                     .item(&status_item)
                     .item(&sep1)
-                    .item(&show_item)
+                    .item(&send_file_item)
+                    .item(&clip_item)
+                    .item(&mirror_item)
+                    .item(&downloads_item)
                     .item(&sep2)
+                    .item(&show_item)
+                    .item(&sep3)
                     .item(&quit_item)
                     .build()
                 {
@@ -729,6 +768,70 @@ pub fn run() {
                             .tooltip("Janus Ecosystem Bridge")
                             .on_menu_event(|app, event| {
                                 match event.id.as_ref() {
+                                    "send_file" => {
+                                        let app_clone = app.clone();
+                                        tauri::async_runtime::spawn(async move {
+                                            let state = app_clone.state::<SharedState>();
+                                            let target_dev = {
+                                                let active = state.active_devices.lock().unwrap();
+                                                active.values().next().map(|(_, dev)| (dev.ip.clone(), dev.port, dev.name.clone()))
+                                            };
+
+                                            if let Some((ip, port, _dev_name)) = target_dev {
+                                                if let Some(files) = app_clone.dialog().file().blocking_pick_files() {
+                                                    for file_path in files {
+                                                        let path_str = match file_path {
+                                                            tauri_plugin_dialog::FilePath::Path(p) => p.to_string_lossy().to_string(),
+                                                            tauri_plugin_dialog::FilePath::Url(u) => u.path().to_string(),
+                                                        };
+                                                        if !path_str.is_empty() {
+                                                            let _ = send_file_inner(&state, ip.clone(), port, path_str, &app_clone).await;
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                show_macos_notification("Janus Quick Send", "No mobile device currently connected. Please connect your phone first.");
+                                            }
+                                        });
+                                    }
+                                    "clipboard_sync" => {
+                                        let state = app.state::<SharedState>();
+                                        if let Ok(mut clip) = arboard::Clipboard::new() {
+                                            if let Ok(text) = clip.get_text() {
+                                                if !text.is_empty() {
+                                                    let packet = crate::protocol::Packet {
+                                                        r#type: "clipboard.update".to_string(),
+                                                        id: Uuid::new_v4().to_string(),
+                                                        timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                                        payload: serde_json::json!({ "content": text, "contentType": "text/plain" }),
+                                                    };
+                                                    crate::server::broadcast_packet(&state, &packet);
+                                                    show_macos_notification("Janus Clipboard", "Mac clipboard synced to mobile!");
+                                                }
+                                            }
+                                        }
+                                    }
+                                    "mirror" => {
+                                        let state = app.state::<SharedState>();
+                                        let packet = crate::protocol::Packet {
+                                            r#type: "screencast.action".to_string(),
+                                            id: Uuid::new_v4().to_string(),
+                                            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                            payload: serde_json::json!({ "action": "start" }),
+                                        };
+                                        crate::server::broadcast_packet(&state, &packet);
+                                        if let Some(window) = app.get_webview_window("main") {
+                                            let _ = window.show();
+                                            let _ = window.unminimize();
+                                            let _ = window.set_focus();
+                                            let _ = window.emit("select-tab", "screencast");
+                                        }
+                                    }
+                                    "open_downloads" => {
+                                        if let Some(download_dir) = dirs::download_dir() {
+                                            let _ = std::process::Command::new("open").arg(download_dir).spawn();
+                                        }
+                                    }
                                     "show" => {
                                         if let Some(window) = app.get_webview_window("main") {
                                             let _ = window.show();

@@ -29,7 +29,7 @@ pub struct ActiveTransfer {
     pub received_bytes: HashMap<String, u64>, // file_hash -> bytes
 }
 
-fn show_macos_notification(title: &str, body: &str) {
+pub fn show_macos_notification(title: &str, body: &str) {
     #[cfg(target_os = "macos")]
     {
         let escaped_title = title.replace('\\', "\\\\").replace('"', "\\\"");
@@ -645,4 +645,13 @@ async fn upload_file(
 
     println!("Received file: {} ({} bytes)", file_name, bytes_written);
     (axum::http::StatusCode::OK, "Upload complete").into_response()
+}
+
+pub fn broadcast_packet(state: &SharedState, packet: &crate::protocol::Packet) {
+    if let Ok(text) = serde_json::to_string(packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        for tx in clients.values() {
+            let _ = tx.send(Message::Text(text.clone()));
+        }
+    }
 }
