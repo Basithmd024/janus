@@ -543,32 +543,7 @@ class MainActivity : ComponentActivity() {
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        if (updateInfoState?.isUpdateAvailable == true) {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Icon(Icons.Default.Info, contentDescription = "Update Available", tint = MaterialTheme.colorScheme.primary)
-                                        Column {
-                                            Text("Update Available: Janus v${updateInfoState?.latestVersion}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                            Text("New stability enhancements are ready!", fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
-                                        }
-                                    }
-                                    Button(
-                                        onClick = {
-                                            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(updateInfoState?.apkUrl ?: "https://github.com/Basithmd024/janus/releases/latest"))
-                                            context.startActivity(intent)
-                                        },
-                                        modifier = Modifier.align(Alignment.End),
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                                    ) {
-                                        Text("Download & Update APK")
-                                    }
-                                }
-                            }
-                        }
+
                         // Local Node Status
                         Card(
                             modifier = Modifier.fillMaxWidth(),
