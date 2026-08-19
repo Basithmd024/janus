@@ -565,6 +565,148 @@ class MainActivity : ComponentActivity() {
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
 
+                        // 1. Hero Welcome Banner Card (Matching Reference Screenshot)
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                        ) {
+                            Column {
+                                Column(modifier = Modifier.padding(20.dp)) {
+                                    Text(
+                                        text = "Hi Md Basith,",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 19.sp,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Good Evening,  Thursday, 20 August",
+                                        fontSize = 13.sp,
+                                        color = Color(0xFF64748B)
+                                    )
+                                }
+                                
+                                HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
+                                
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { activeTabState = 1 }
+                                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "View Schedule",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                    Text("➔", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF0F172A))
+                                }
+                            }
+                        }
+
+                        // 2. ESSENTIALS Section Grid (2-Column Pastel Cards)
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "ESSENTIALS",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Color(0xFF475569),
+                                modifier = Modifier.padding(start = 2.dp)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                EssentialTile(
+                                    modifier = Modifier.weight(1f),
+                                    bgColor = Color(0xFFE8F5E9),
+                                    iconBgColor = Color(0xFF81C784),
+                                    icon = Icons.Default.DateRange,
+                                    title = "Attendance",
+                                    stat = "82.91 %",
+                                    subtext = "As on Aug 19, 12:41 PM"
+                                )
+
+                                EssentialTile(
+                                    modifier = Modifier.weight(1f),
+                                    bgColor = Color(0xFFFFEBEE),
+                                    iconBgColor = Color(0xFFE57373),
+                                    icon = Icons.Default.ShoppingCart,
+                                    title = "Fee Payments",
+                                    stat = "INR 0.00",
+                                    subtext = "As on Aug 10, 19:27 PM"
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                EssentialTile(
+                                    modifier = Modifier.weight(1f),
+                                    bgColor = Color(0xFFF3E5F5),
+                                    iconBgColor = Color(0xFFBA68C8),
+                                    icon = Icons.Default.LocationOn,
+                                    title = "Campus Events",
+                                    stat = null,
+                                    subtext = "Live Stream Mirroring"
+                                )
+
+                                EssentialTile(
+                                    modifier = Modifier.weight(1f),
+                                    bgColor = Color(0xFFE0F7FA),
+                                    iconBgColor = Color(0xFF4DD0E1),
+                                    icon = Icons.Default.Notifications,
+                                    title = "Campus Clubs",
+                                    stat = null,
+                                    subtext = "Active Notifications"
+                                )
+                            }
+                        }
+
+                        // 3. TOOLS Section Grid
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "TOOLS",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Color(0xFF475569),
+                                modifier = Modifier.padding(start = 2.dp)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                EssentialTile(
+                                    modifier = Modifier.weight(1f),
+                                    bgColor = Color(0xFFFFF8E1),
+                                    iconBgColor = Color(0xFFFFB74D),
+                                    icon = Icons.Default.Call,
+                                    title = "Call & SMS",
+                                    stat = null,
+                                    subtext = "Phone Bridge Active"
+                                )
+
+                                EssentialTile(
+                                    modifier = Modifier.weight(1f),
+                                    bgColor = Color(0xFFE3F2FD),
+                                    iconBgColor = Color(0xFF64B5F6),
+                                    icon = Icons.Default.Person,
+                                    title = "My Profile",
+                                    stat = null,
+                                    subtext = "${Build.MODEL}"
+                                )
+                            }
+                        }
+
                         // Local Node Status
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -1722,6 +1864,80 @@ fun JanusLogoCrest(modifier: Modifier = Modifier) {
                     )
                 }
             }
+        }
+    }
+}
+
+
+@Composable
+fun EssentialTile(
+    modifier: Modifier = Modifier,
+    bgColor: Color,
+    iconBgColor: Color,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    stat: String? = null,
+    subtext: String
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = bgColor),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, bgColor.copy(alpha = 0.8f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                color = iconBgColor
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = Color(0xFF1E293B)
+            )
+
+            if (stat != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stat,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = Color(0xFF0F172A)
+                    )
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Sync",
+                        tint = Color(0xFF475569),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = subtext,
+                fontSize = 11.sp,
+                color = Color(0xFF64748B)
+            )
         }
     }
 }
