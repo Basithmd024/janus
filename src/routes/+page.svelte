@@ -32,8 +32,8 @@
     source: string;
   }
 
-  // Theme Toggle State
-  let currentTheme = $state<string>(typeof localStorage !== 'undefined' ? (localStorage.getItem('janus-theme') || 'dark') : 'dark');
+  // Theme Toggle State (Default to Light Theme)
+  let currentTheme = $state<string>(typeof localStorage !== 'undefined' ? (localStorage.getItem('janus-theme') || 'light') : 'light');
 
   function toggleTheme() {
     currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
@@ -854,6 +854,10 @@
     await loadIdentity();
     await loadPairedDevices();
     await loadConnectedDevices();
+    const connCheckInterval = setInterval(() => {
+      loadConnectedDevices();
+    }, 2500);
+    onDestroy(() => clearInterval(connCheckInterval));
     
     // Auto-generate pairing PIN on startup
     try {
@@ -1060,15 +1064,52 @@
     unlisteners.push(unlistenDeviceStatus);
 
     const unlistenDeviceRegistered = await listen<any>("device-registered", async (event) => {
-      console.log("🟢 Device registered:", event.payload);
+      console.log("🟢 Device registered via WebSocket:", event.payload);
+      const dev = event.payload;
+      if (dev && dev.fingerprint) {
+        const existingIdx = discoveredDevices.findIndex(d => d.fingerprint === dev.fingerprint);
+        const entry: Device = {
+          name: dev.name || dev.device_name || "Android Device",
+          ip: dev.ip || "",
+          port: dev.port || 53318,
+          fingerprint: dev.fingerprint,
+          device_type: dev.device_type || "android",
+          paired: true
+        };
+        if (existingIdx >= 0) {
+          discoveredDevices[existingIdx] = entry;
+          discoveredDevices = [...discoveredDevices];
+        } else {
+          discoveredDevices = [...discoveredDevices, entry];
+        }
+      }
       await loadPairedDevices();
+      await loadConnectedDevices();
     });
     unlisteners.push(unlistenDeviceRegistered);
 
     const unlistenDeviceReady = await listen<any>("device-ready", async (event) => {
       console.log("🟢 Device confirmed ready:", event.payload);
-      await loadPairedDevices();
       const payload = event.payload;
+      if (payload && payload.fingerprint) {
+        const existingIdx = discoveredDevices.findIndex(d => d.fingerprint === payload.fingerprint);
+        const entry: Device = {
+          name: payload.name || payload.device_name || "Android Device",
+          ip: payload.ip || "",
+          port: payload.port || 53318,
+          fingerprint: payload.fingerprint,
+          device_type: payload.device_type || "android",
+          paired: true
+        };
+        if (existingIdx >= 0) {
+          discoveredDevices[existingIdx] = entry;
+          discoveredDevices = [...discoveredDevices];
+        } else {
+          discoveredDevices = [...discoveredDevices, entry];
+        }
+      }
+      await loadPairedDevices();
+      await loadConnectedDevices();
       if (payload.battery_level !== undefined) deviceBattery = payload.battery_level;
       if (payload.is_charging !== undefined) deviceIsCharging = payload.is_charging;
       if (payload.signal_level !== undefined) deviceSignal = payload.signal_level;
@@ -2118,49 +2159,9 @@
 
 <style>
   /* ════════════════════════════════════════════════
-     DESIGN TOKENS — DARK THEME (Default)
+     DESIGN TOKENS — LIGHT THEME (Default)
      ════════════════════════════════════════════════ */
-  :root, :root[data-theme="dark"] {
-    --bg-base: #09080f;
-    --bg-surface: rgba(16, 14, 28, 0.55);
-    --bg-elevated: rgba(24, 20, 42, 0.65);
-    --border-subtle: rgba(255, 255, 255, 0.06);
-    --border-accent: rgba(255, 255, 255, 0.1);
-    --text-primary: #f0ecf7;
-    --text-secondary: #8b82a8;
-    --text-muted: #5e5578;
-    --accent: #a78bfa;
-    --accent-bright: #c4b5fd;
-    --accent-dim: rgba(167, 139, 250, 0.12);
-    --success: #34d399;
-    --success-dim: rgba(52, 211, 153, 0.12);
-    --error: #f87171;
-    --error-dim: rgba(248, 113, 113, 0.1);
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 16px;
-    --radius-xl: 20px;
-    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --shadow-card: 0 2px 12px rgba(0,0,0,0.2);
-    --shadow-elevated: 0 8px 32px rgba(0,0,0,0.35);
-    --transition: 0.2s ease;
-    --hover-bg: rgba(255,255,255,0.03);
-    --hover-bg-strong: rgba(255,255,255,0.06);
-    --scrollbar-track: rgba(255,255,255,0.03);
-    --scrollbar-thumb: rgba(255,255,255,0.08);
-    --card-bg: rgba(24, 20, 42, 0.65);
-    --input-bg: rgba(255,255,255,0.04);
-    --input-border: rgba(255,255,255,0.08);
-    --sidebar-bg: rgba(16, 14, 28, 0.92);
-    --hero-card-bg: linear-gradient(135deg, rgba(30, 22, 55, 0.8) 0%, rgba(20, 16, 40, 0.9) 100%);
-    --badge-bg: rgba(167, 139, 250, 0.1);
-    --meta-bg: rgba(255,255,255,0.03);
-  }
-
-  /* ════════════════════════════════════════════════
-     DESIGN TOKENS — LIGHT THEME
-     ════════════════════════════════════════════════ */
-  :root[data-theme="light"] {
+  :root, :root[data-theme="light"] {
     --bg-base: #f8f7fc;
     --bg-surface: rgba(255, 255, 255, 0.85);
     --bg-elevated: rgba(255, 255, 255, 0.95);
@@ -2176,8 +2177,14 @@
     --success-dim: rgba(5, 150, 105, 0.08);
     --error: #dc2626;
     --error-dim: rgba(220, 38, 38, 0.06);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --shadow-card: 0 2px 12px rgba(0,0,0,0.06);
     --shadow-elevated: 0 8px 32px rgba(0,0,0,0.1);
+    --transition: 0.2s ease;
     --hover-bg: rgba(0,0,0,0.03);
     --hover-bg-strong: rgba(0,0,0,0.06);
     --scrollbar-track: rgba(0,0,0,0.03);
@@ -2185,10 +2192,44 @@
     --card-bg: rgba(255,255,255, 0.9);
     --input-bg: rgba(0,0,0,0.03);
     --input-border: rgba(0,0,0,0.1);
-    --sidebar-bg: rgba(255, 255, 255, 0.92);
+    --sidebar-bg: rgba(255, 255, 255, 0.94);
     --hero-card-bg: linear-gradient(135deg, rgba(248, 245, 255, 0.95) 0%, rgba(237, 233, 254, 0.9) 100%);
     --badge-bg: rgba(124, 58, 237, 0.08);
     --meta-bg: rgba(0,0,0,0.03);
+  }
+
+  /* ════════════════════════════════════════════════
+     DESIGN TOKENS — TRUE DEEP BLACK (Dark Theme)
+     ════════════════════════════════════════════════ */
+  :root[data-theme="dark"] {
+    --bg-base: #050508;
+    --bg-surface: rgba(12, 12, 16, 0.75);
+    --bg-elevated: rgba(18, 18, 24, 0.85);
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-accent: rgba(255, 255, 255, 0.14);
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --accent: #818cf8;
+    --accent-bright: #a5b4fc;
+    --accent-dim: rgba(129, 140, 248, 0.14);
+    --success: #34d399;
+    --success-dim: rgba(52, 211, 153, 0.14);
+    --error: #f87171;
+    --error-dim: rgba(248, 113, 113, 0.12);
+    --shadow-card: 0 4px 20px rgba(0,0,0,0.6);
+    --shadow-elevated: 0 12px 40px rgba(0,0,0,0.8);
+    --hover-bg: rgba(255,255,255,0.04);
+    --hover-bg-strong: rgba(255,255,255,0.08);
+    --scrollbar-track: rgba(255,255,255,0.02);
+    --scrollbar-thumb: rgba(255,255,255,0.12);
+    --card-bg: rgba(14, 14, 20, 0.85);
+    --input-bg: rgba(255,255,255,0.05);
+    --input-border: rgba(255,255,255,0.1);
+    --sidebar-bg: rgba(8, 8, 12, 0.95);
+    --hero-card-bg: linear-gradient(135deg, rgba(20, 20, 30, 0.95) 0%, rgba(10, 10, 16, 0.95) 100%);
+    --badge-bg: rgba(129, 140, 248, 0.12);
+    --meta-bg: rgba(255,255,255,0.04);
   }
 
   :global(body) {
