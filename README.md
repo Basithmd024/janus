@@ -20,7 +20,7 @@
 [![Svelte 5](https://img.shields.io/badge/Svelte_5-Runes_Reactivity-FF3E00.svg?style=for-the-badge&logo=svelte)](https://svelte.dev/)
 [![Android Kotlin](https://img.shields.io/badge/Android-Kotlin_1.9+-7F52FF.svg?style=for-the-badge&logo=kotlin)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Compose-Material_3-4285F4.svg?style=for-the-badge&logo=android)](https://developer.android.com/jetpack/compose)
-[![Security TLS](https://img.shields.io/badge/Security-TLS_1.3_%7C_SHA--256-10B981.svg?style=for-the-badge&logo=shield)](https://github.com/Basithmd123/Mgit)
+[![Security TLS](https://img.shields.io/badge/Security-TLS_1.3_%7C_SHA--256-10B981.svg?style=for-the-badge&logo=shield)](https://github.com/Basithmd024/janus)
 [![CodeRabbit AI](https://img.shields.io/badge/AI_Review-CodeRabbit-purple.svg?style=for-the-badge&logo=probot)](https://coderabbit.ai/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
@@ -92,7 +92,7 @@ graph TD
 
 ```bash
 # Clone the repository
-git clone https://github.com/Basithmd123/Mgit.git janus
+git clone https://github.com/Basithmd024/janus.git janus
 cd janus
 
 # Run the automated installer toolchain
