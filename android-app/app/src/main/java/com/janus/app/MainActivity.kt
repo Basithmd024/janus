@@ -28,6 +28,8 @@ import androidx.compose.material3.*
 import androidx.compose.animation.core.*
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -463,8 +465,16 @@ class MainActivity : ComponentActivity() {
         var manualPort by remember { mutableStateOf("53317") }
         var manualFingerprint by remember { mutableStateOf("") }
         var manualPin by remember { mutableStateOf("") }
-
         var activeTabState by remember { mutableIntStateOf(0) }
+        val coroutineScope = rememberCoroutineScope()
+        val context = LocalContext.current
+
+        var updateInfoState by remember { mutableStateOf<AppUpdateInfo?>(null) }
+        var isCheckingUpdate by remember { mutableStateOf(false) }
+
+        LaunchedEffect(Unit) {
+            updateInfoState = checkMobileAppUpdate()
+        }
 
         Scaffold(
             topBar = {
@@ -533,6 +543,32 @@ class MainActivity : ComponentActivity() {
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        if (updateInfoState?.isUpdateAvailable == true) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("✨", fontSize = 20.sp)
+                                        Column {
+                                            Text("Update Available: Janus v${updateInfoState?.latestVersion}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                            Text("New stability enhancements are ready!", fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                                        }
+                                    }
+                                    Button(
+                                        onClick = {
+                                            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(updateInfoState?.apkUrl ?: "https://github.com/Basithmd024/janus/releases/latest"))
+                                            context.startActivity(intent)
+                                        },
+                                        modifier = Modifier.align(Alignment.End),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                    ) {
+                                        Text("⬇️ Download & Update APK")
+                                    }
+                                }
+                            }
+                        }
                         // Local Node Status
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -826,6 +862,57 @@ class MainActivity : ComponentActivity() {
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        // Software Updates Card
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text("Software Updates", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Current Version:", color = Color.Gray, fontSize = 14.sp)
+                                    Text("v${updateInfoState?.currentVersion ?: "1.0.0"}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Status:", color = Color.Gray, fontSize = 14.sp)
+                                    Text(
+                                        text = if (updateInfoState?.isUpdateAvailable == true) "🚀 v${updateInfoState?.latestVersion} Available" else "✅ Up to date",
+                                        color = if (updateInfoState?.isUpdateAvailable == true) MaterialTheme.colorScheme.primary else Color(0xFF10B981),
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                                    if (updateInfoState?.isUpdateAvailable == true) {
+                                        Button(
+                                            onClick = {
+                                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(updateInfoState?.apkUrl ?: "https://github.com/Basithmd024/janus/releases/latest"))
+                                                context.startActivity(intent)
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                        ) {
+                                            Text("⬇️ Update APK")
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                isCheckingUpdate = true
+                                                updateInfoState = checkMobileAppUpdate()
+                                                isCheckingUpdate = false
+                                                Toast.makeText(context, if (updateInfoState?.isUpdateAvailable == true) "New version v${updateInfoState?.latestVersion} available!" else "Janus is up to date! (v1.0.0)", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    ) {
+                                        Text(if (isCheckingUpdate) "Checking..." else "Check for Updates")
+                                    }
+                                }
+                            }
+                        }
                         if (isConnectedState.value) {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1430,4 +1517,66 @@ class MainActivity : ComponentActivity() {
             isBound = false
         }
     }
+}
+
+
+data class AppUpdateInfo(
+    val currentVersion: String = "1.0.0",
+    val latestVersion: String = "1.0.0",
+    val isUpdateAvailable: Boolean = false,
+    val releaseNotes: List<String> = emptyList(),
+    val apkUrl: String = "https://github.com/Basithmd024/janus/releases/download/v1.0.0/app-debug.apk",
+    val releaseUrl: String = "https://github.com/Basithmd024/janus/releases/latest"
+)
+
+suspend fun checkMobileAppUpdate(): AppUpdateInfo = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    val current = "1.0.0"
+    try {
+        val client = okhttp3.OkHttpClient.Builder()
+            .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+
+        val request = okhttp3.Request.Builder()
+            .url("https://raw.githubusercontent.com/Basithmd024/janus/main/version.json")
+            .build()
+
+        val response = client.newCall(request).execute()
+        if (response.isSuccessful) {
+            val body = response.body?.string() ?: ""
+            val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+            val latest = json.get("version")?.asString ?: current
+            val apk = json.getAsJsonObject("downloads")?.get("android_apk")?.asString
+                ?: "https://github.com/Basithmd024/janus/releases/download/v1.0.0/app-debug.apk"
+            val releaseUrl = json.getAsJsonObject("downloads")?.get("release_url")?.asString
+                ?: "https://github.com/Basithmd024/janus/releases/latest"
+            val notesArray = json.getAsJsonArray("notes")
+            val notes = notesArray?.map { it.asString } ?: emptyList()
+
+            val isNewer = compareAppVersions(latest, current) > 0
+            return@withContext AppUpdateInfo(
+                currentVersion = current,
+                latestVersion = latest,
+                isUpdateAvailable = isNewer,
+                releaseNotes = notes,
+                apkUrl = apk,
+                releaseUrl = releaseUrl
+            )
+        }
+    } catch (e: Exception) {
+        android.util.Log.w("JanusUpdate", "Update check failed: ${e.message}")
+    }
+    return@withContext AppUpdateInfo(currentVersion = current, latestVersion = current)
+}
+
+fun compareAppVersions(v1: String, v2: String): Int {
+    val clean1 = v1.removePrefix("v").split(".").mapNotNull { it.toIntOrNull() }
+    val clean2 = v2.removePrefix("v").split(".").mapNotNull { it.toIntOrNull() }
+    val maxLen = maxOf(clean1.size, clean2.size)
+    for (i in 0 until maxLen) {
+        val p1 = clean1.getOrElse(i) { 0 }
+        val p2 = clean2.getOrElse(i) { 0 }
+        if (p1 != p2) return p1.compareTo(p2)
+    }
+    return 0
 }
