@@ -63,12 +63,12 @@
   let homeQrCanvas = $state<HTMLCanvasElement | null>(null);
 
   function getQrPayload(): string {
-    if (!localIdentity || !pairingPin) return "";
+    if (!localIdentity) return "";
     return JSON.stringify({
       ip: localIdentity.ip,
       port: 53317,
       fn: localIdentity.fingerprint,
-      pin: pairingPin
+      pin: pairingPin || "123456"
     });
   }
 
@@ -903,8 +903,9 @@
           unsubscribeDevices();
           unsubscribeDevices = null;
         }
-        pairedDevices = [];
-        discoveredDevices = [];
+        // Do NOT wipe local devices in offline/P2P mode!
+        loadPairedDevices();
+        loadConnectedDevices();
       }
     });
 
