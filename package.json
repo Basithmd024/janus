@@ -10,7 +10,12 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
-    "prepare": "svelte-kit sync"
+    "prepare": "svelte-kit sync",
+    "clean": "lsof -ti :1420 | xargs kill -9 2>/dev/null || true",
+    "dev:clean": "lsof -ti :1420 | xargs kill -9 2>/dev/null || true && vite dev",
+    "tauri:clean": "lsof -ti :1420 | xargs kill -9 2>/dev/null || true && tauri dev",
+    "master": "npx svelte-kit sync && lsof -ti :1420 | xargs kill -9 2>/dev/null || true && tauri dev",
+    "master:build": "npx svelte-kit sync && npm run build && tauri build"
   },
   "license": "MIT",
   "dependencies": {
