@@ -615,6 +615,26 @@ async fn sync_sms(
     Ok("Sync sms command sent".to_string())
 }
 
+#[tauri::command]
+async fn request_device_status(state: State<'_, SharedState>) -> Result<(), String> {
+    let clients = state.active_ws_clients.lock().unwrap();
+    let packet = crate::protocol::Packet {
+        r#type: "device.request_status".to_string(),
+        id: uuid::Uuid::new_v4().to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({}),
+    };
+    if let Ok(text) = serde_json::to_string(&packet) {
+        for (_id, tx) in clients.iter() {
+            let _ = tx.send(axum::extract::ws::Message::Text(text.clone()));
+        }
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

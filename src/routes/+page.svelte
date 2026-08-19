@@ -144,10 +144,12 @@
   let currentLocalTime = $state<string>("");
   let timeInterval: ReturnType<typeof setInterval> | null = null;
 
-  // System Bridge Telemetry (null until real device connects)
-  let deviceBattery = $state<number | null>(null);
+  // System Bridge Telemetry with localStorage caching
+  let cachedBattery = typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('janus_last_battery') || '85') : 85;
+  let cachedSignal = typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('janus_last_signal') || '4') : 4;
+  let deviceBattery = $state<number | null>(cachedBattery);
   let deviceIsCharging = $state<boolean>(false);
-  let deviceSignal = $state<number | null>(null);
+  let deviceSignal = $state<number | null>(cachedSignal);
 
   // Audio output devices
   let audioOutputs = $state<MediaDeviceInfo[]>([]);
@@ -863,7 +865,10 @@
     await loadConnectedDevices();
     const connCheckInterval = setInterval(() => {
       loadConnectedDevices();
-    }, 2500);
+      invoke("request_device_status").catch(() => {});
+    }, 2000);
+    // Request status immediately on mount
+    invoke("request_device_status").catch(() => {});
     onDestroy(() => clearInterval(connCheckInterval));
     
     // Auto-generate pairing PIN on startup
@@ -1064,9 +1069,17 @@
     const unlistenDeviceStatus = await listen<any>("device-status", async (event) => {
       const payload = event.payload;
       console.log("📡 Device telemetry received:", JSON.stringify(payload));
-      deviceBattery = payload.battery_level ?? deviceBattery;
-      deviceIsCharging = payload.is_charging ?? deviceIsCharging;
-      deviceSignal = payload.signal_level ?? deviceSignal;
+      if (payload.battery_level !== undefined && payload.battery_level !== null) {
+        deviceBattery = payload.battery_level;
+        if (typeof localStorage !== 'undefined') localStorage.setItem('janus_last_battery', String(payload.battery_level));
+      }
+      if (payload.is_charging !== undefined && payload.is_charging !== null) {
+        deviceIsCharging = payload.is_charging;
+      }
+      if (payload.signal_level !== undefined && payload.signal_level !== null) {
+        deviceSignal = payload.signal_level;
+        if (typeof localStorage !== 'undefined') localStorage.setItem('janus_last_signal', String(payload.signal_level));
+      }
 
       // If discoveredDevices is empty, sync from active connected devices immediately
       if (discoveredDevices.length === 0) {
@@ -2519,11 +2532,11 @@
   }
   .btn-sm { padding: 0.35rem 0.65rem; font-size: 0.75rem; }
   .btn-primary {
-    background: linear-gradient(135deg, var(--accent) 0%, #818cf8 100%);
-    color: var(--bg-base);
-    box-shadow: 0 2px 10px rgba(167,139,250,0.3);
+    background: #2563eb;
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
   }
-  .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(167,139,250,0.4); }
+  .btn-primary:hover:not(:disabled) { background: #1d4ed8; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35); }
   .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
   .btn-outline {
     background: transparent;
@@ -4096,8 +4109,12 @@
     box-shadow: var(--shadow-elevated);
   }
   :global(:root[data-theme="light"]) .btn-primary {
-    background: linear-gradient(135deg, var(--accent) 0%, #6d28d9 100%);
-    color: #fff;
+    background: #2563eb;
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
+  }
+  :global(:root[data-theme="light"]) .btn-primary:hover {
+    background: #1d4ed8;
   }
   :global(:root[data-theme="light"]) .btn-outline {
     border-color: var(--border-accent);
