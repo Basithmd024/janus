@@ -1032,7 +1032,9 @@ pub fn run() {
             inject_remote_key,
             send_audio_frame,
             sync_calls,
-            sync_sms
+            sync_sms,
+            check_for_updates,
+            download_and_open_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
