@@ -1,14 +1,17 @@
 {
-  "version": "0.0.1",
-  "min_version": "0.0.1",
+  "version": "1.0.1",
+  "min_version": "1.0.0",
   "release_date": "2026-08-20",
-  "title": "Janus Early Preview v0.0.1",
+  "title": "Janus Mobile Update v1.0.1",
   "notes": [
-    "Initial prototype build"
+    "Removed test demo options for senior production build",
+    "Added First-Launch Onboarding Username Setup",
+    "Added In-App Bug Reporter with GitHub Issue proxy sync",
+    "Added 500-entry max notification storage cap"
   ],
   "downloads": {
-    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v1.0.0/app-debug.apk",
-    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v1.0.0/Janus.dmg",
-    "release_url": "https://github.com/Basithmd024/janus/releases/latest"
+    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v1.0.1/app-debug.apk",
+    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v1.0.1/Janus.dmg",
+    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v1.0.1"
   }
 }
