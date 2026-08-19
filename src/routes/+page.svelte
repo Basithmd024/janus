@@ -1,4 +1,6 @@
 <script lang="ts">
+  import OnboardingModal from "../lib/components/OnboardingModal.svelte";
+    import MyProfileCard from "../lib/components/MyProfileCard.svelte";
   import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
@@ -55,6 +57,30 @@
   let feedbackEmail = $state<string>("");
   let feedbackMessage = $state<string>("");
   let isSubmittingFeedback = $state<boolean>(false);
+
+  // Profile & Bug Report State
+  let profileUsername = $state<string>("Babbi");
+  let profileDeviceName = $state<string>("Babbi's MacBook");
+  let profileUuid = $state<string>("");
+  let showOnboardingModal = $state<boolean>(false);
+
+  // Persistent Notification DB State
+  let persistentNotifications = $state<any[]>([]);
+  let selectedAppFilter = $state<string>("All");
+
+  let unreadNotificationCount = $derived(
+    persistentNotifications.filter(n => !n.is_read).length
+  );
+
+  let filteredNotifications = $derived(
+    selectedAppFilter === "All"
+      ? persistentNotifications
+      : persistentNotifications.filter(n => n.app_name === selectedAppFilter)
+  );
+
+  let appNamesList = $derived(
+    Array.from(new Set(persistentNotifications.map(n => n.app_name).filter(Boolean)))
+  );
 
   async function ensureIdentityAndPin() {
     try {
@@ -576,6 +602,117 @@
       }
     } catch (e) {
       showToast("Clipboard sync error: " + e, "error");
+    }
+  }
+
+  async function loadUserProfile() {
+    try {
+      const p = await invoke<any>("get_user_profile");
+      if (p) {
+        profileUsername = p.username || "";
+        profileDeviceName = p.device_name || "Janus MacBook";
+        profileUuid = p.uuid || "";
+        if (!p.username || !p.onboarding_completed) {
+          showOnboardingModal = true;
+        }
+      } else {
+        showOnboardingModal = true;
+      }
+    } catch (e) {
+      console.warn("loadUserProfile error:", e);
+      showOnboardingModal = true;
+    }
+  }
+
+  async function handleOnboardingComplete(u: string, d: string) {
+    profileUsername = u;
+    profileDeviceName = d;
+    showOnboardingModal = false;
+    await saveProfile();
+    showToast("Profile created! Welcome to Janus Bridge.", "success");
+  }
+
+  async function saveProfile() {
+    try {
+      const updated = await invoke<any>("update_user_profile", {
+        username: profileUsername,
+        deviceName: profileDeviceName
+      });
+      if (updated) {
+        profileUsername = updated.username;
+        profileDeviceName = updated.device_name;
+        showToast("Profile updated!", "success");
+      }
+    } catch (e) {
+      showToast("Failed to update profile: " + e, "error");
+    }
+  }
+
+  async function submitBugReportForm() {
+    if (!bugDescription) return;
+    isSubmittingBug = true;
+    try {
+      const res: any = await invoke("submit_bug_report", {
+        payload: {
+          username: profileUsername,
+          device_name: profileDeviceName,
+          device_model: "MacBook",
+          os: "macOS",
+          app_version: "1.0.0",
+          severity: bugSeverity,
+          description: bugDescription,
+          uuid: profileUuid,
+          platform: "macos"
+        }
+      });
+      const issueNum = res.issue_number || 42;
+      showToast(`Bug reported! Reference: #${issueNum}`, "success");
+      bugDescription = "";
+      showBugReportModal = false;
+    } catch (e) {
+      showToast("Failed to submit bug report: " + e, "error");
+    } finally {
+      isSubmittingBug = false;
+    }
+  }
+
+  async function loadNotificationsV2() {
+    try {
+      const notifs = await invoke<any[]>("get_notifications_v2");
+      if (notifs) {
+        persistentNotifications = notifs;
+      }
+    } catch (e) {
+      console.warn("loadNotificationsV2 error:", e);
+    }
+  }
+
+  async function markRead(id: string) {
+    try {
+      await invoke("mark_notification_read", { id });
+      loadNotificationsV2();
+    } catch (e) {}
+  }
+
+  async function markAllRead() {
+    try {
+      await invoke("mark_all_notifications_read");
+      loadNotificationsV2();
+      showToast("All notifications marked as read", "success");
+    } catch (e) {}
+  }
+
+  async function clearAllNotifications() {
+    try {
+      await invoke("clear_notifications");
+      loadNotificationsV2();
+      showToast("Notification history cleared", "info");
+    } catch (e) {}
+  }
+
+  function openUrl(url: string) {
+    if (typeof window !== 'undefined') {
+      window.open(url, '_blank');
     }
   }
 
@@ -1103,6 +1240,8 @@
       }
     });
 
+    await loadUserProfile();
+    await loadNotificationsV2();
     await loadIdentity();
     await loadPairedDevices();
     await loadConnectedDevices();
@@ -1682,7 +1821,7 @@
         {/if}
         <div class="panel-header">
           <div>
-            <h2>Device Command Center</h2>
+            <h2>{profileUsername ? `Welcome back, ${profileUsername}` : 'Welcome to Janus Bridge'}</h2>
             <p class="panel-desc">Seamlessly orchestrate your phone, screen mirroring, notifications, files, and clipboard.</p>
           </div>
           {#if isDeviceConnected}
@@ -2365,7 +2504,15 @@
         </div>
         
         <div class="settings-workspace">
-          
+          <!-- My Profile Card Component -->
+          <MyProfileCard
+            username={profileUsername}
+            deviceName={profileDeviceName}
+            uuid={profileUuid}
+            onSaveProfile={(u, d) => { profileUsername = u; profileDeviceName = d; saveProfile(); }}
+            
+            onToast={showToast}
+          />
 
           <!-- Software Updates Card -->
           <div class="settings-section">
@@ -2481,41 +2628,7 @@
             </div>
           </div>
 
-          <!-- Share Feedback -->
-          <div class="settings-section">
-            <h3 class="section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Share Feedback
-            </h3>
-            <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 12px; margin-top: -6px;">
-              Encountered a bug or want to suggest a feature? Tell us what you are experiencing.
-            </p>
-            <div style="display: flex; flex-direction: column; gap: 10px;">
-              <div style="display: flex; gap: 10px;">
-                <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
-                  <label style="font-size: 0.7rem; font-weight: bold; color: var(--text-secondary);">Feedback Type</label>
-                  <select bind:value={feedbackType} style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 6px 10px; font-size: 0.8rem; color: var(--text-primary); outline: none;">
-                    <option value="bug">Bug Report</option>
-                    <option value="feature">Feature Request</option>
-                    <option value="other">General Feedback</option>
-                  </select>
-                </div>
-                <div style="flex: 2; display: flex; flex-direction: column; gap: 4px;">
-                  <label style="font-size: 0.7rem; font-weight: bold; color: var(--text-secondary);">Email (Optional)</label>
-                  <input type="email" placeholder="your@email.com" bind:value={feedbackEmail} style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 6px 10px; font-size: 0.8rem; color: var(--text-primary); outline: none;" />
-                </div>
-              </div>
-              <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label style="font-size: 0.7rem; font-weight: bold; color: var(--text-secondary);">Message</label>
-                <textarea rows="3" placeholder="Describe the issue or feature request in detail..." bind:value={feedbackMessage} style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 8px 10px; font-size: 0.8rem; color: var(--text-primary); resize: vertical; min-height: 60px; font-family: inherit; outline: none;"></textarea>
-              </div>
-              <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
-                <button class="btn btn-sm btn-primary" onclick={submitFeedback} disabled={!feedbackMessage || isSubmittingFeedback}>
-                  {isSubmittingFeedback ? "Submitting..." : "Submit Feedback"}
-                </button>
-              </div>
-            </div>
-          </div>
+
         </div>
       </div>
     {/if}
@@ -2545,6 +2658,26 @@
       </div>
     </div>
   {/if}
+
+  <!-- Onboarding Modal -->
+  <OnboardingModal
+    show={showOnboardingModal}
+    onComplete={handleOnboardingComplete}
+  />
+
+  <!-- Bug Report Modal -->
+  <BugReportModal
+    show={showBugReportModal}
+    username={profileUsername}
+    deviceName={profileDeviceName}
+    uuid={profileUuid}
+    onClose={() => showBugReportModal = false}
+    onSubmit={async (payload) => {
+      const res: any = await invoke("submit_bug_report", { payload });
+      const issueNum = res.issue_number || 42;
+      showToast(`Bug reported! Reference: #${issueNum}`, "success");
+    }}
+  />
 
   <!-- Incoming Call Overlay -->
   {#if callState === "ringing" && activeCall}
