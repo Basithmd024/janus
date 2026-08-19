@@ -17,7 +17,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 use tauri::{AppHandle, Emitter};
 
-use crate::protocol::{Packet, PrepareUploadRequest, PrepareUploadResponse, FileMetadata, DeviceInfo};
+use crate::protocol::{Packet, PrepareUploadRequest, PrepareUploadResponse, FileMetadata, DeviceInfo, UserProfile, NotificationItem};
 use crate::security::{Identity, PairedDeviceStore, save_paired_device};
 use crate::clipboard::ClipboardState;
 
@@ -49,6 +49,8 @@ pub fn show_macos_notification(title: &str, body: &str) {
 pub struct ServerState {
     pub config_dir: PathBuf,
     pub identity: Identity,
+    pub user_profile: Mutex<crate::protocol::UserProfile>,
+    pub notifications_db: Mutex<Vec<crate::protocol::NotificationItem>>,
     pub active_transfers: Mutex<HashMap<String, ActiveTransfer>>,
     pub active_ws_clients: Mutex<HashMap<String, tokio::sync::mpsc::UnboundedSender<Message>>>,
     pub client_fingerprints: Mutex<HashMap<String, String>>, // client_id -> fingerprint
@@ -272,6 +274,8 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                             fingerprint: payload.fingerprint,
                             device_type: payload.device_type,
                             paired: true,
+                            username: None,
+                            uuid: None,
                         });
                         serde_json::json!({ "status": "success", "fingerprint": state.identity.fingerprint })
                     }
@@ -315,6 +319,9 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             let _ = state.app_handle.emit("remote-clipboard-update", packet.payload);
         }
         "notification.new" => {
+            let app_name = packet.payload.get("app_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown App");
             let title = packet.payload.get("title")
                 .and_then(|v| v.as_str())
                 .or_else(|| packet.payload.get("app_name").and_then(|v| v.as_str()))
@@ -322,21 +329,41 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             let text = packet.payload.get("text")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            
+            let notif_id = packet.payload.get("notification_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
             show_macos_notification(title, text);
 
-            // Store in persistent state
+            let notif_item = crate::protocol::NotificationItem {
+                id: if notif_id.is_empty() { uuid::Uuid::new_v4().to_string() } else { notif_id.clone() },
+                app_name: app_name.to_string(),
+                title: title.to_string(),
+                body: text.to_string(),
+                timestamp: packet.timestamp,
+                is_read: false,
+            };
+
+            {
+                let mut db = state.notifications_db.lock().unwrap();
+                db.retain(|n| n.id != notif_item.id);
+                db.insert(0, notif_item);
+                if db.len() > 500 {
+                    db.truncate(500);
+                }
+                let _ = crate::security::save_persistent_notifications(state.config_dir.clone(), &db);
+            }
+
             {
                 let mut notifs = state.recent_notifications.lock().unwrap();
-                let notif_id = packet.payload.get("notification_id").and_then(|v| v.as_str()).unwrap_or("");
-                notifs.retain(|n| n.get("notification_id").and_then(|v| v.as_str()).unwrap_or("") != notif_id);
+                notifs.retain(|n| n.get("notification_id").and_then(|v| v.as_str()).unwrap_or("") != notif_id.as_str());
                 notifs.push(packet.payload.clone());
                 if notifs.len() > 50 {
                     notifs.remove(0);
                 }
             }
 
-            // Forward the full notification payload to the Svelte frontend
             println!("🔔 Received notification from Android: {:?}", title);
             let _ = state.app_handle.emit("notification-new", packet.payload);
         }
@@ -489,6 +516,8 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                         fingerprint: payload.fingerprint.clone(),
                         device_type: payload.device_type,
                         paired: true,
+                        username: None,
+                        uuid: None,
                     };
 
                     // Map this client_id to the device fingerprint

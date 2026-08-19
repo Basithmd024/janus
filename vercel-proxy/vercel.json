@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "routes": [
+    {
+      "src": "/api/report-bug",
+      "dest": "/api/report-bug.ts"
+    }
+  ]
+}

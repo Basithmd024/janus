@@ -207,7 +207,10 @@ class ConnectionManager(
                 // Send register packet immediately
                 val registerPayload = JsonObject().apply {
                     addProperty("fingerprint", identity.fingerprint)
-                    addProperty("device_name", android.os.Build.MODEL)
+                    val profileMgr = ProfileManager(context)
+                    addProperty("device_name", profileMgr.getDeviceName())
+                    addProperty("username", profileMgr.getUsername())
+                    addProperty("uuid", profileMgr.getUuid())
                     addProperty("device_type", "android")
                     if (realCap in 0..100) addProperty("battery_level", realCap)
                     addProperty("is_charging", isCharging)

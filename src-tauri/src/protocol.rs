@@ -16,6 +16,42 @@ pub struct DeviceInfo {
     pub fingerprint: String,
     pub device_type: String,
     pub paired: bool,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub uuid: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct UserProfile {
+    pub uuid: String,
+    pub username: String,
+    pub device_name: String,
+    #[serde(default)]
+    pub onboarding_completed: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NotificationItem {
+    pub id: String,
+    pub app_name: String,
+    pub title: String,
+    pub body: String,
+    pub timestamp: u64,
+    pub is_read: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BugReportPayload {
+    pub username: String,
+    pub device_name: String,
+    pub device_model: String,
+    pub os: String,
+    pub app_version: String,
+    pub severity: String,
+    pub description: String,
+    pub uuid: String,
+    pub platform: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -73,6 +109,8 @@ mod tests {
             fingerprint: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string(),
             device_type: "android".to_string(),
             paired: true,
+            username: Some("Babbi".to_string()),
+            uuid: Some("uuid-1234".to_string()),
         };
 
         let val = serde_json::to_value(&dev).expect("Serialization failed");

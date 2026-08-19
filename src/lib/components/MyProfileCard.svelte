@@ -4,7 +4,7 @@
     deviceName: string;
     uuid: string;
     onSaveProfile: (username: string, deviceName: string) => void;
-    onToast: (msg: string, type?: string) => void;
+    onToast: (msg: string, type?: 'info' | 'success' | 'error') => void;
   }
 
   let { username, deviceName, uuid, onSaveProfile, onToast }: Props = $props();
@@ -175,6 +175,15 @@
   .btn-sm {
     padding: 7px 14px;
     font-size: 0.8rem;
+  }
+
+  .btn-primary {
+    background: #2563eb;
+    color: #ffffff;
+  }
+
+  .btn-primary:hover {
+    background: #1d4ed8;
   }
 
   .btn-outline {

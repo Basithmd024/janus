@@ -1,3 +1,4 @@
+use crate::protocol::{UserProfile, NotificationItem};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -161,4 +162,66 @@ mod tests {
         assert_eq!(reloaded[0].name, "Galaxy S24 Ultra");
         let _ = fs::remove_dir_all(&path);
     }
+}
+
+pub fn get_or_create_user_profile(config_dir: PathBuf) -> Result<UserProfile, String> {
+    let path = config_dir.join("user_profile.json");
+    if path.exists() {
+        match fs::read_to_string(&path) {
+            Ok(file_content) => {
+                match serde_json::from_str::<UserProfile>(&file_content) {
+                    Ok(profile) => return Ok(profile),
+                    Err(e) => {
+                        eprintln!("⚠️ Warning: user_profile.json was corrupted or invalid ({})! Recovering with new profile...", e);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("⚠️ Warning: Failed to read user_profile.json ({})! Recovering...", e);
+            }
+        }
+    }
+
+    let uuid = uuid::Uuid::new_v4().to_string();
+    let default_username = "".to_string(); // Empty string means onboarding will trigger
+    let default_device_name = "Janus MacBook".to_string();
+
+    let profile = UserProfile {
+        uuid,
+        username: default_username,
+        device_name: default_device_name,
+        onboarding_completed: false,
+    };
+
+    let _ = save_user_profile(config_dir, profile.clone());
+    Ok(profile)
+}
+
+pub fn save_user_profile(config_dir: PathBuf, profile: UserProfile) -> Result<(), String> {
+    let _ = fs::create_dir_all(&config_dir);
+    let path = config_dir.join("user_profile.json");
+    let json = serde_json::to_string_pretty(&profile).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn load_persistent_notifications(config_dir: PathBuf) -> Vec<NotificationItem> {
+    let path = config_dir.join("notifications_db.json");
+    if !path.exists() {
+        return Vec::new();
+    }
+    if let Ok(content) = fs::read_to_string(path) {
+        if let Ok(items) = serde_json::from_str::<Vec<NotificationItem>>(&content) {
+            return items;
+        }
+    }
+    Vec::new()
+}
+
+pub fn save_persistent_notifications(config_dir: PathBuf, notifications: &[NotificationItem]) -> Result<(), String> {
+    let _ = fs::create_dir_all(&config_dir);
+    let path = config_dir.join("notifications_db.json");
+    let json = serde_json::to_string(&notifications).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| e.to_string())?;
+    Ok(())
 }

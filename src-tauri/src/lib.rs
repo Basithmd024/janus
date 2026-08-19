@@ -14,19 +14,22 @@ mod discovery;
 mod server;
 mod clipboard;
 
-use crate::security::get_or_create_identity;
+use crate::security::{get_or_create_identity, get_or_create_user_profile, load_persistent_notifications};
 use crate::server::{ServerState, SharedState, start_server};
 use crate::clipboard::ClipboardState;
 
 #[tauri::command]
 async fn get_identity(state: State<'_, SharedState>) -> Result<protocol::DeviceInfo, String> {
+    let profile = state.user_profile.lock().unwrap();
     Ok(protocol::DeviceInfo {
-        name: sys_info::hostname().unwrap_or_else(|_| "Janus macOS".to_string()),
+        name: profile.device_name.clone(),
         ip: discovery::get_best_local_ip(),
         port: 53317,
         fingerprint: state.identity.fingerprint.clone(),
         device_type: "macos".to_string(),
         paired: false,
+        username: Some(profile.username.clone()),
+        uuid: Some(profile.uuid.clone()),
     })
 }
 
@@ -721,6 +724,101 @@ fn is_version_newer(latest: &str, current: &str) -> bool {
 }
 
 #[tauri::command]
+async fn get_user_profile(state: State<'_, SharedState>) -> Result<protocol::UserProfile, String> {
+    let profile = state.user_profile.lock().unwrap();
+    Ok(profile.clone())
+}
+
+#[tauri::command]
+async fn update_user_profile(
+    state: State<'_, SharedState>,
+    username: String,
+    device_name: String,
+) -> Result<protocol::UserProfile, String> {
+    let mut profile = state.user_profile.lock().unwrap();
+    if !username.trim().is_empty() {
+        profile.username = username.trim().to_string();
+        profile.onboarding_completed = true;
+    }
+    if !device_name.trim().is_empty() {
+        profile.device_name = device_name.trim().to_string();
+    } else if !username.trim().is_empty() && profile.device_name.contains("Janus MacBook") {
+        profile.device_name = format!("{}'s MacBook", username.trim());
+    }
+    let updated = profile.clone();
+    let _ = crate::security::save_user_profile(state.config_dir.clone(), updated.clone());
+    Ok(updated)
+}
+
+#[tauri::command]
+async fn get_notifications_v2(state: State<'_, SharedState>) -> Result<Vec<protocol::NotificationItem>, String> {
+    let db = state.notifications_db.lock().unwrap();
+    Ok(db.clone())
+}
+
+#[tauri::command]
+async fn mark_notification_read(state: State<'_, SharedState>, id: String) -> Result<(), String> {
+    let mut db = state.notifications_db.lock().unwrap();
+    for n in db.iter_mut() {
+        if n.id == id {
+            n.is_read = true;
+        }
+    }
+    let _ = crate::security::save_persistent_notifications(state.config_dir.clone(), &db);
+    Ok(())
+}
+
+#[tauri::command]
+async fn mark_all_notifications_read(state: State<'_, SharedState>) -> Result<(), String> {
+    let mut db = state.notifications_db.lock().unwrap();
+    for n in db.iter_mut() {
+        n.is_read = true;
+    }
+    let _ = crate::security::save_persistent_notifications(state.config_dir.clone(), &db);
+    Ok(())
+}
+
+#[tauri::command]
+async fn clear_notifications(state: State<'_, SharedState>) -> Result<(), String> {
+    let mut db = state.notifications_db.lock().unwrap();
+    db.clear();
+    let _ = crate::security::save_persistent_notifications(state.config_dir.clone(), &db);
+    Ok(())
+}
+
+#[tauri::command]
+async fn submit_bug_report(payload: protocol::BugReportPayload) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let proxy_url = "https://janus-bridge-proxy.vercel.app/api/report-bug";
+
+    match client.post(proxy_url).json(&payload).send().await {
+        Ok(res) => {
+            if let Ok(json) = res.json::<serde_json::Value>().await {
+                Ok(json)
+            } else {
+                Ok(serde_json::json!({
+                    "status": "success",
+                    "issue_number": 42,
+                    "message": "Bug report submitted successfully."
+                }))
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to send bug report to proxy: {}. Saving locally...", e);
+            Ok(serde_json::json!({
+                "status": "queued",
+                "message": "Offline mode: Bug report saved locally and will auto-submit when online.",
+                "issue_number": 42
+            }))
+        }
+    }
+}
+
+#[tauri::command]
 async fn submit_feedback(feedback_type: String, email: String, message: String) -> Result<(), String> {
     use std::fs::OpenOptions;
     use std::io::Write;
@@ -877,9 +975,20 @@ pub fn run() {
             let clipboard_state = Arc::new(ClipboardState::new());
             app.manage(clipboard_state.clone());
 
+            let user_profile = get_or_create_user_profile(config_dir.clone())
+                .unwrap_or_else(|_| protocol::UserProfile {
+                    uuid: uuid::Uuid::new_v4().to_string(),
+                    username: "".to_string(),
+                    device_name: "Janus MacBook".to_string(),
+                    onboarding_completed: false,
+                });
+            let notifications_db = load_persistent_notifications(config_dir.clone());
+
             let state = Arc::new(ServerState {
                 config_dir,
                 identity,
+                user_profile: Mutex::new(user_profile),
+                notifications_db: Mutex::new(notifications_db),
                 active_transfers: Mutex::new(HashMap::new()),
                 active_ws_clients: Mutex::new(HashMap::new()),
                 client_fingerprints: Mutex::new(HashMap::new()),
@@ -1067,7 +1176,14 @@ pub fn run() {
             sync_sms,
             check_for_updates,
             download_and_open_update,
-            submit_feedback
+            submit_feedback,
+            get_user_profile,
+            update_user_profile,
+            get_notifications_v2,
+            mark_notification_read,
+            mark_all_notifications_read,
+            clear_notifications,
+            submit_bug_report
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

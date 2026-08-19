@@ -1,3 +1,4 @@
+
 package com.janus.app
 
 import android.Manifest
@@ -226,7 +227,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val systemDark = isSystemInDarkTheme()
             var isManualDark by remember { mutableStateOf<Boolean?>(null) }
-            val isDark = isManualDark ?: systemDark
+            val isDark = isManualDark ?: false
 
             val colorScheme = if (isDark) {
                 darkColorScheme(
@@ -484,27 +485,42 @@ class MainActivity : ComponentActivity() {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text("Janus Bridge", fontWeight = FontWeight.Bold)
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .background(
-                                        color = if (isConnectedState.value) Color(0xFF10B981) else Color(0xFFEF4444),
-                                        shape = androidx.compose.foundation.shape.CircleShape
-                                    )
+                    navigationIcon = {
+                        IconButton(onClick = { activeTabState = 1 }) {
+                            Icon(
+                                imageVector = Icons.Default.Menu,
+                                contentDescription = "Menu",
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     },
+                    title = {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                JanusLogoCrest()
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .background(
+                                            color = if (isConnectedState.value) Color(0xFF10B981) else Color(0xFFEF4444),
+                                            shape = androidx.compose.foundation.shape.CircleShape
+                                        )
+                                )
+                            }
+                        }
+                    },
                     actions = {
-                        IconButton(onClick = onToggleTheme) {
-                            Text(
-                                text = if (isDark) "Light" else "Dark",
-                                fontSize = 18.sp
+                        IconButton(onClick = { startQrCodeScanner() }) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = "Scan QR",
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     },
@@ -1631,7 +1647,7 @@ data class AppUpdateInfo(
 )
 
 suspend fun checkMobileAppUpdate(): AppUpdateInfo = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-    val current = "1.0.0"
+    val current = "2.0.0"
     try {
         val client = okhttp3.OkHttpClient.Builder()
             .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
@@ -1680,4 +1696,32 @@ fun compareAppVersions(v1: String, v2: String): Int {
         if (p1 != p2) return p1.compareTo(p2)
     }
     return 0
+}
+
+
+@Composable
+fun JanusLogoCrest(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.size(38.dp),
+        shape = androidx.compose.foundation.shape.CircleShape,
+        color = Color(0xFF1E3A8A),
+        border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF3B82F6))
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Surface(
+                modifier = Modifier.size(30.dp),
+                shape = androidx.compose.foundation.shape.CircleShape,
+                color = Color(0xFF2563EB)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "J",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 18.sp,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
 }

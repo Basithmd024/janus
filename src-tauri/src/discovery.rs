@@ -148,7 +148,9 @@ pub fn start_browsing(app_handle: AppHandle) -> Result<(), String> {
                             port: info.get_port(),
                             fingerprint: fingerprint.clone(),
                             device_type: device_type.clone(),
-                            paired: false, // will check pairing status separately
+                            paired: false,
+                            username: None,
+                            uuid: None,
                         };
                         
                         println!("Discovered device: {:?} at {}:{}", name, ip, info.get_port());

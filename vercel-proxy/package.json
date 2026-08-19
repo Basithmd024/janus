@@ -1,0 +1,12 @@
+{
+  "name": "janus-vercel-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "next build"
+  },
+  "dependencies": {
+    "@vercel/node": "^3.0.0"
+  }
+}
