@@ -244,6 +244,26 @@
     }
   }
 
+  function triggerDemoUpdate() {
+    updateInfo = {
+      current_version: "1.0.0",
+      latest_version: "1.1.0",
+      update_available: true,
+      release_notes: [
+        "⚡ Zero-Interaction Fast-Path Auto-Connect (<400ms)",
+        "🍏 Native macOS Top Menu Bar Quick Actions & Status",
+        "📁 Instant File Drop & Streaming Engine",
+        "🛡️ Permanent WebSocket Keepalive & Connection Stability",
+        "☀️/🌙 Material 3 Dynamic Light & Dark Theme",
+        "📋 Real-time Universal Clipboard Sync"
+      ],
+      download_url: "https://github.com/Basithmd024/janus/releases/download/v1.0.0/app-debug.apk",
+      release_url: "https://github.com/Basithmd024/janus/releases/latest"
+    };
+    showUpdateModal = true;
+    showToast("✨ Demo Update v1.1.0 loaded for preview!", "info");
+  }
+
   async function startUpdateDownload() {
     if (!updateInfo || !updateInfo.download_url) return;
     isDownloadingUpdate = true;
@@ -1597,8 +1617,31 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.5"/></svg>
         <span>Settings</span>
       </button>
-
     </nav>
+
+    <!-- Pinned Bottom Sidebar Footer: Software Updates & Version -->
+    <div class="sidebar-footer">
+      <button class="sidebar-update-btn {updateInfo?.update_available ? 'has-update' : ''}" onclick={() => checkForUpdates(true)}>
+        <div class="update-icon-dot">
+          {#if updateInfo?.update_available}
+            <span class="update-ping-dot"></span>
+          {:else}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" stroke="currentColor" stroke-width="1.8"/></svg>
+          {/if}
+        </div>
+        <div class="update-text-col">
+          <span class="update-title">{updateInfo?.update_available ? "🚀 Update Ready" : "Software Update"}</span>
+          <span class="update-ver">Janus v{updateInfo?.current_version || "1.0.0"}</span>
+        </div>
+        {#if updateInfo?.update_available}
+          <span class="update-pill">v{updateInfo.latest_version}</span>
+        {/if}
+      </button>
+
+      <button class="demo-update-link" onclick={triggerDemoUpdate}>
+        🧪 Test Update Demo
+      </button>
+    </div>
   </aside>
 
   <!-- MAIN WORKSPACE -->
@@ -4879,6 +4922,134 @@
     font-size: 0.82rem;
     font-weight: 600;
     color: var(--text-secondary, #64748b);
+  }
+
+
+  /* Sidebar Bottom Footer: Software Updates */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .sidebar-footer {
+    padding: 12px 14px;
+    border-top: 1px solid var(--border-color, rgba(226, 232, 240, 0.8));
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--bg-sidebar, #f8fafc);
+  }
+
+  .sidebar-update-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+  }
+
+  .sidebar-update-btn:hover {
+    background: var(--bg-card, #ffffff);
+    border-color: var(--border-color, #e2e8f0);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+  }
+
+  .sidebar-update-btn.has-update {
+    background: rgba(37, 99, 235, 0.08);
+    border-color: rgba(37, 99, 235, 0.25);
+  }
+
+  .update-icon-dot {
+    position: relative;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: rgba(100, 116, 139, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary, #64748b);
+  }
+
+  .has-update .update-icon-dot {
+    background: rgba(37, 99, 235, 0.15);
+    color: #2563eb;
+  }
+
+  .update-ping-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+    animation: ping 1.5s infinite cubic-bezier(0, 0, 0.2, 1);
+  }
+
+  @keyframes ping {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(37, 99, 235, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+  }
+
+  .update-text-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .update-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-primary, #0f172a);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .update-ver {
+    font-size: 0.7rem;
+    color: var(--text-secondary, #64748b);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .update-pill {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: #2563eb;
+    color: #ffffff;
+  }
+
+  .demo-update-link {
+    background: none;
+    border: none;
+    font-size: 0.72rem;
+    color: var(--text-secondary, #64748b);
+    cursor: pointer;
+    text-align: center;
+    padding: 2px 0;
+    opacity: 0.75;
+    transition: opacity 0.2s ease;
+  }
+
+  .demo-update-link:hover {
+    opacity: 1;
+    color: #2563eb;
+    text-decoration: underline;
   }
 
 </style>
