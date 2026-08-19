@@ -779,6 +779,14 @@ async fn mark_all_notifications_read(state: State<'_, SharedState>) -> Result<()
 }
 
 #[tauri::command]
+async fn delete_notification(state: State<'_, SharedState>, id: String) -> Result<(), String> {
+    let mut db = state.notifications_db.lock().unwrap();
+    db.retain(|n| n.id != id);
+    let _ = crate::security::save_persistent_notifications(state.config_dir.clone(), &db);
+    Ok(())
+}
+
+#[tauri::command]
 async fn clear_notifications(state: State<'_, SharedState>) -> Result<(), String> {
     let mut db = state.notifications_db.lock().unwrap();
     db.clear();
@@ -1183,6 +1191,7 @@ pub fn run() {
             mark_notification_read,
             mark_all_notifications_read,
             clear_notifications,
+            delete_notification,
             submit_bug_report
         ])
         .run(tauri::generate_context!())

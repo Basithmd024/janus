@@ -683,6 +683,16 @@
     } catch (e) {}
   }
 
+    async function deleteNotification(id: string) {
+    try {
+      await invoke("delete_notification", { id });
+      await loadNotificationsV2();
+      showToast("Notification deleted", "info");
+    } catch (e) {
+      console.warn("deleteNotification error:", e);
+    }
+  }
+
   async function clearAllNotifications() {
     try {
       await invoke("clear_notifications");
@@ -1305,7 +1315,8 @@
 
     const unlistenNotificationDismiss = await listen<any>("notification-dismiss", (event) => {
       const payload = event.payload;
-      activeNotifications = activeNotifications.filter((n) => n.notification_id !== payload.notification_id);
+      // Preserved in DB: do not delete on remote phone dismiss
+      loadNotificationsV2();
     });
     unlisteners.push(unlistenNotificationDismiss);
 
@@ -2076,55 +2087,64 @@
     <!-- ═══════ NOTIFICATIONS TAB ═══════ -->
     {:else if activeTab === 'notifications'}
       <div class="tab-panel notifications-tab">
-        <div class="panel-header">
-          <h2>Notifications</h2>
-          <p class="panel-desc">Mirrored phone notifications. Reply to messages inline or dismiss them instantly.</p>
+        <div class="panel-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <h2>Notifications Database ({persistentNotifications.length})</h2>
+            <p class="panel-desc">All incoming phone notifications are permanently stored in your Mac app database until you delete them.</p>
+          </div>
+          {#if persistentNotifications.length > 0}
+            <button class="btn btn-sm btn-outline" onclick={clearAllNotifications}>Clear History</button>
+          {/if}
         </div>
         
+        {#if appNamesList.length > 0}
+          <div style="display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px;">
+            <button
+              class="btn btn-xs {selectedAppFilter === 'All' ? 'btn-primary' : 'btn-outline'}"
+              onclick={() => selectedAppFilter = 'All'}
+            >
+              All ({persistentNotifications.length})
+            </button>
+            {#each appNamesList as app}
+              <button
+                class="btn btn-xs {selectedAppFilter === app ? 'btn-primary' : 'btn-outline'}"
+                onclick={() => selectedAppFilter = app}
+              >
+                {app}
+              </button>
+            {/each}
+          </div>
+        {/if}
+
         <div class="notifications-workspace">
-          {#if activeNotifications.length === 0}
+          {#if filteredNotifications.length === 0}
             <div class="empty-state">
               <div class="empty-icon">
                 <svg width="56" height="56" viewBox="0 0 24 24" fill="none"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.73 21a2 2 0 01-3.46 0" stroke="currentColor" stroke-width="1.2"/></svg>
               </div>
-              <h3>No Notifications</h3>
-              <p>Incoming notifications from your phone will appear here in real-time.</p>
+              <h3>No Notifications Stored</h3>
+              <p>Notifications received from your phone will remain stored here until you manually delete them.</p>
             </div>
           {:else}
             <div class="notif-list">
-              {#each activeNotifications as notif (notif.notification_id)}
-                <div class="notif-card">
+              {#each filteredNotifications as notif (notif.id || notif.notification_id || Math.random())}
+                <div class="notif-card" style="border-left: 3px solid var(--accent-color, #3b82f6);">
                   <div class="notif-header">
-                    {#if notif.app_icon}
-                      <img class="notif-app-icon" src="data:image/png;base64,{notif.app_icon}" alt={notif.app_name} />
-                    {:else}
+                    <div style="display: flex; align-items: center; gap: 8px;">
                       <div class="notif-app-icon-placeholder">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="5" y="2" width="14" height="20" rx="3" stroke="currentColor" stroke-width="1.5"/></svg>
                       </div>
-                    {/if}
-                    <span class="notif-app-name">{notif.app_name}</span>
-                    <span class="notif-time">{new Date(notif.timestamp || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                      <span class="notif-app-name" style="font-weight: bold; color: var(--text-primary);">{notif.app_name || 'Notification'}</span>
+                    </div>
+                    <span class="notif-time">{new Date(notif.timestamp || Date.now()).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'})}</span>
                   </div>
-                  <div class="notif-body">
-                    <h4>{notif.title}</h4>
-                    <p>{notif.text}</p>
+                  <div class="notif-body" style="margin-top: 8px;">
+                    <h4 style="margin: 0 0 4px 0; font-size: 0.95rem; font-weight: 600; color: var(--text-primary);">{notif.title}</h4>
+                    <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary);">{notif.body || notif.text}</p>
                   </div>
-                  <div class="notif-actions">
-                    {#if notif.is_replyable}
-                      <div class="reply-row">
-                        <input
-                          type="text"
-                          placeholder="Type a reply..."
-                          bind:value={replyInputs[notif.notification_id]}
-                          onkeydown={(e) => { if (e.key === 'Enter') replyToNotification(notif.notification_id, replyInputs[notif.notification_id] || ''); }}
-                        />
-                        <button class="btn btn-sm btn-primary" onclick={() => replyToNotification(notif.notification_id, replyInputs[notif.notification_id] || '')}>
-                          Reply
-                        </button>
-                      </div>
-                    {/if}
-                    <button class="btn btn-sm btn-ghost-danger" onclick={() => dismissNotification(notif.notification_id)}>
-                      Dismiss
+                  <div class="notif-actions" style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px;">
+                    <button class="btn btn-sm btn-outline" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" onclick={() => deleteNotification(notif.id || notif.notification_id)}>
+                      Delete
                     </button>
                   </div>
                 </div>
