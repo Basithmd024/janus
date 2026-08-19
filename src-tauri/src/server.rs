@@ -383,12 +383,36 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
         }
         "device.status" => {
             println!("📡 Received device telemetry: {}", packet.payload);
-            *state.last_telemetry.lock().unwrap() = Some(packet.payload.clone());
+            {
+                let mut t = state.last_telemetry.lock().unwrap();
+                if let Some(existing) = t.as_mut() {
+                    if let (Some(existing_obj), Some(new_obj)) = (existing.as_object_mut(), packet.payload.as_object()) {
+                        for (k, v) in new_obj {
+                            existing_obj.insert(k.clone(), v.clone());
+                        }
+                    } else {
+                        *existing = packet.payload.clone();
+                    }
+                } else {
+                    *t = Some(packet.payload.clone());
+                }
+            }
             let _ = state.app_handle.emit("device-status", packet.payload);
         }
         "device.ready" => {
             println!("🟢 Phone confirmed connected and ready: {}", packet.payload);
-            *state.last_telemetry.lock().unwrap() = Some(packet.payload.clone());
+            {
+                let mut t = state.last_telemetry.lock().unwrap();
+                if let Some(existing) = t.as_mut() {
+                    if let (Some(existing_obj), Some(new_obj)) = (existing.as_object_mut(), packet.payload.as_object()) {
+                        for (k, v) in new_obj {
+                            existing_obj.insert(k.clone(), v.clone());
+                        }
+                    }
+                } else {
+                    *t = Some(packet.payload.clone());
+                }
+            }
             let _ = state.app_handle.emit("device-ready", packet.payload.clone());
             let _ = state.app_handle.emit("device-status", packet.payload);
         }

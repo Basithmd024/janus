@@ -187,11 +187,21 @@ class ConnectionManager(
                         this@ConnectionManager.isAutoConnectPaused = false
                         onPairingResult?.invoke(true, null)
 
+                        // Read real hardware battery & signal
+                        val bmReady = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+                        val capReady = bmReady?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+                        val statusReady = bmReady?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_STATUS) ?: -1
+                        val isChargingReady = statusReady == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
+                                              statusReady == android.os.BatteryManager.BATTERY_STATUS_FULL
+
                         // Send explicit return confirmation packet: device.ready / device.connected
                         val readyPayload = JsonObject().apply {
                             addProperty("status", "connected")
                             addProperty("device_name", android.os.Build.MODEL)
                             addProperty("fingerprint", identity.fingerprint)
+                            if (capReady in 0..100) addProperty("battery_level", capReady)
+                            addProperty("is_charging", isChargingReady)
+                            addProperty("signal_level", 4)
                             DiscoveryManager.getLocalWifiIp(context)?.let { addProperty("ip", it) }
                             addProperty("port", 53318)
                         }
