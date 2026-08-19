@@ -29,16 +29,27 @@ class ConnectionManager(
     private val client = OkHttpClient()
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    @Volatile
     var connectedIp: String? = null
         private set
+
+    @Volatile
     var connectedPort: Int? = null
         private set
+
+    @Volatile
     var connectedFingerprint: String? = null
         private set
+
+    @Volatile
     var isConnected: Boolean = false
         private set
+
+    @Volatile
     var isConnecting: Boolean = false
         private set
+
+    @Volatile
     var isAutoConnectPaused: Boolean = false
 
     private var autoReconnectEnabled = true
@@ -112,6 +123,7 @@ class ConnectionManager(
         return prefs.getStringSet("paired_devices", emptySet()) ?: emptySet()
     }
 
+    @Synchronized
     fun connectToDevice(
         ip: String,
         port: Int,
@@ -121,8 +133,13 @@ class ConnectionManager(
     ) {
         cancelPendingReconnect()
         
-        if (isConnected && connectedIp == ip && connectedPort == port) {
-            Log.d("JanusConnection", "Already connected to $ip:$port")
+        if (isConnected && connectedIp == ip && connectedPort == port && webSocket != null) {
+            Log.d("JanusConnection", "Already connected and active to $ip:$port — ignoring redundant connect")
+            return
+        }
+
+        if (isConnecting && connectedIp == ip && connectedPort == port) {
+            Log.d("JanusConnection", "Connection already in-flight to $ip:$port — skipping duplicate attempt")
             return
         }
 
@@ -163,9 +180,11 @@ class ConnectionManager(
         val customClient = client.newBuilder()
             .sslSocketFactory(sslContext.socketFactory, trustManager)
             .hostnameVerifier { _, _ -> true }
-            .pingInterval(10, TimeUnit.SECONDS)
-            .connectTimeout(5, TimeUnit.SECONDS)
+            .pingInterval(15, TimeUnit.SECONDS)
+            .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.SECONDS)
+            .writeTimeout(0, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
 
         val request = Request.Builder().url(url).build()

@@ -192,7 +192,17 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
                                     }
                                 }
                             }
-                            _ => {}
+                            Message::Ping(payload) => {
+                                if socket.send(Message::Pong(payload)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Message::Pong(_) => {
+                                // WebSocket keepalive acknowledged
+                            }
+                            Message::Close(_) => {
+                                break;
+                            }
                         }
                     }
                     _ => break,

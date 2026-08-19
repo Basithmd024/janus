@@ -276,12 +276,13 @@ class JanusService : Service() {
                     val fnBytes = nsdInfo.attributes?.get("fn")
                     val fingerprint = if (fnBytes != null) String(fnBytes, Charsets.UTF_8) else null
                     if (fingerprint != null && connectionManager?.isFingerprintPaired(fingerprint) == true) {
-                        if (!isConnected) {
+                        val cm = connectionManager
+                        if (cm != null && !cm.isConnected && !cm.isConnecting) {
                             val txtIp = nsdInfo.attributes?.get("ip")?.let { String(it) }
                             val ip = txtIp ?: nsdInfo.host?.hostAddress
                             if (ip != null) {
                                 Log.d("JanusService", "Auto-reconnecting to paired device: ${nsdInfo.serviceName} at $ip")
-                                connectionManager?.connectToDevice(ip, nsdInfo.port, fingerprint)
+                                cm.connectToDevice(ip, nsdInfo.port, fingerprint)
                             }
                         }
                     }
@@ -307,8 +308,11 @@ class JanusService : Service() {
                     .build()
                 cm?.registerNetworkCallback(networkRequest, object : android.net.ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: android.net.Network) {
-                        Log.d("JanusService", "🌐 Network available — triggering background auto-connect")
-                        connectionManager?.autoConnectToSavedHosts()
+                        val connMgr = connectionManager
+                        if (connMgr != null && !connMgr.isConnected && !connMgr.isConnecting) {
+                            Log.d("JanusService", "🌐 Network available and currently offline — triggering background auto-connect")
+                            connMgr.autoConnectToSavedHosts()
+                        }
                     }
                 })
             } catch (e: Exception) {
