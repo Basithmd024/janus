@@ -1619,28 +1619,11 @@
       </button>
     </nav>
 
-    <!-- Pinned Bottom Sidebar Footer: Software Updates & Version -->
     <div class="sidebar-footer">
-      <button class="sidebar-update-btn {updateInfo?.update_available ? 'has-update' : ''}" onclick={() => checkForUpdates(true)}>
-        <div class="update-icon-dot">
-          {#if updateInfo?.update_available}
-            <span class="update-ping-dot"></span>
-          {:else}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" stroke="currentColor" stroke-width="1.8"/></svg>
-          {/if}
-        </div>
-        <div class="update-text-col">
-          <span class="update-title">{updateInfo?.update_available ? "🚀 Update Ready" : "Software Update"}</span>
-          <span class="update-ver">Janus v{updateInfo?.current_version || "1.0.0"}</span>
-        </div>
-        {#if updateInfo?.update_available}
-          <span class="update-pill">v{updateInfo.latest_version}</span>
-        {/if}
-      </button>
-
-      <button class="demo-update-link" onclick={triggerDemoUpdate}>
-        🧪 Test Update Demo
-      </button>
+      <div class="sidebar-ver-tag">
+        <span>Janus Core</span>
+        <span class="mono">v{updateInfo?.current_version || "1.0.0"}</span>
+      </div>
     </div>
   </aside>
 
@@ -1671,7 +1654,7 @@
           {#if isDeviceConnected}
             <div class="status-pill online">
               <span class="dot online"></span>
-              <span>{activeConnectedDevice?.name || 'Device'} Connected • Local Wi-Fi Bridge</span>
+              <span>Connected</span>
             </div>
           {:else}
             <div class="status-pill offline">
@@ -1696,8 +1679,7 @@
                   <span class="badge-type">{activeDev.device_type.toUpperCase()}</span>
                 </div>
                 <div class="hero-device-meta">
-                  <span class="meta-tag">IP: {activeDev.ip}:{activeDev.port}</span>
-                  <span class="meta-tag">FP: {activeDev.fingerprint.substring(0, 10)}...</span>
+                  <span class="meta-status-text">Connected via Local Wi-Fi Mesh</span>
                 </div>
               </div>
             </div>
@@ -1717,8 +1699,8 @@
               <div class="telemetry-gauge">
                 <span class="gauge-label">Cellular / Wi-Fi Signal</span>
                 <div class="gauge-val-row">
-                  <span class="gauge-val">{deviceSignal !== null ? `${deviceSignal}/4 Bars` : 'Connected'}</span>
-                  <span class="signal-tag">LTE / 5G</span>
+                  <span class="gauge-val">{deviceSignal !== null ? (deviceSignal >= 3 ? 'Excellent' : deviceSignal >= 2 ? 'Good' : deviceSignal >= 1 ? 'Fair' : 'Weak') : 'Connected'}</span>
+                  <span class="signal-tag">5G / LTE</span>
                 </div>
                 <div class="signal-meter-bars">
                   <span class="sbar {deviceSignal !== null && deviceSignal >= 1 ? 'active' : ''}"></span>
@@ -5050,6 +5032,23 @@
     opacity: 1;
     color: #2563eb;
     text-decoration: underline;
+  }
+
+
+  .sidebar-ver-tag {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    font-size: 0.78rem;
+    color: var(--text-tertiary, #64748b);
+    border-top: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
+  }
+
+  .meta-status-text {
+    font-size: 0.8rem;
+    color: #10b981;
+    font-weight: 500;
   }
 
 </style>
