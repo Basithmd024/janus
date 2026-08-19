@@ -690,6 +690,144 @@ async fn request_device_status(state: State<'_, SharedState>) -> Result<(), Stri
     Ok(())
 }
 
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct UpdateInfo {
+    pub current_version: String,
+    pub latest_version: String,
+    pub update_available: bool,
+    pub release_notes: Vec<String>,
+    pub download_url: String,
+    pub release_url: String,
+}
+
+#[allow(dead_code)]
+fn is_version_newer(latest: &str, current: &str) -> bool {
+    let clean_latest = latest.trim_start_matches('v');
+    let clean_current = current.trim_start_matches('v');
+    
+    let parse_nums = |s: &str| -> Vec<u32> {
+        s.split('.').filter_map(|p| p.parse::<u32>().ok()).collect()
+    };
+    
+    let l_parts = parse_nums(clean_latest);
+    let c_parts = parse_nums(clean_current);
+    
+    for (l, c) in l_parts.iter().zip(c_parts.iter()) {
+        if l > c { return true; }
+        if l < c { return false; }
+    }
+    l_parts.len() > c_parts.len()
+}
+
+#[tauri::command]
+#[allow(dead_code)]
+async fn check_for_updates() -> Result<UpdateInfo, String> {
+    let current_version = "1.0.0".to_string();
+    let client = reqwest::Client::builder()
+        .user_agent("Janus-Desktop-App")
+        .timeout(std::time::Duration::from_secs(6))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut latest_ver = current_version.clone();
+    let mut download_url = format!("https://github.com/Basithmd024/janus/releases/download/v{}/Janus.dmg", current_version);
+    let release_url = "https://github.com/Basithmd024/janus/releases/latest".to_string();
+    let mut notes = vec![];
+
+    // Check raw CDN metadata first (fastest, zero rate limits)
+    let cdn_url = "https://raw.githubusercontent.com/Basithmd024/janus/main/version.json";
+    if let Ok(resp) = client.get(cdn_url).send().await {
+        if let Ok(json) = resp.json::<serde_json::Value>().await {
+            if let Some(v) = json.get("version").and_then(|v| v.as_str()) {
+                latest_ver = v.to_string();
+            }
+            if let Some(d) = json.get("downloads").and_then(|d| d.get("macos_dmg")).and_then(|u| u.as_str()) {
+                download_url = d.to_string();
+            }
+            if let Some(n) = json.get("notes").and_then(|n| n.as_array()) {
+                notes = n.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect();
+            }
+        }
+    }
+
+    let update_available = is_version_newer(&latest_ver, &current_version);
+
+    Ok(UpdateInfo {
+        current_version,
+        latest_version: latest_ver,
+        update_available,
+        release_notes: notes,
+        download_url,
+        release_url,
+    })
+}
+
+#[tauri::command]
+#[allow(dead_code)]
+async fn download_and_open_update(
+    handle: AppHandle,
+    download_url: String,
+) -> Result<String, String> {
+    use futures_util::StreamExt;
+    
+    let client = reqwest::Client::builder()
+        .user_agent("Janus-Desktop-App")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    println!("Starting in-app download for update: {}", download_url);
+
+    let response = client.get(&download_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to download update: {}", e))?;
+
+    let total_size = response.content_length().unwrap_or(0);
+    let temp_dmg = std::env::temp_dir().join("Janus-Update.dmg");
+    
+    let mut file = tokio::fs::File::create(&temp_dmg)
+        .await
+        .map_err(|e| format!("Failed to create update file: {}", e))?;
+
+    let mut stream = response.bytes_stream();
+    let mut downloaded: u64 = 0;
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.map_err(|e| format!("Error during download: {}", e))?;
+        tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
+            .await
+            .map_err(|e| format!("Failed to write chunk: {}", e))?;
+
+        downloaded += chunk.len() as u64;
+        let progress = if total_size > 0 {
+            (downloaded as f64 / total_size as f64 * 100.0) as u32
+        } else {
+            50
+        };
+
+        let _ = handle.emit("update-download-progress", serde_json::json!({
+            "downloaded": downloaded,
+            "total": total_size,
+            "progress": progress
+        }));
+    }
+
+    tokio::io::AsyncWriteExt::flush(&mut file).await.map_err(|e| e.to_string())?;
+    drop(file);
+
+    println!("Opening downloaded update DMG: {:?}", temp_dmg);
+    let _ = std::process::Command::new("open").arg(&temp_dmg).spawn();
+
+    let _ = handle.emit("update-download-complete", serde_json::json!({
+        "status": "ready",
+        "path": temp_dmg.to_string_lossy().to_string()
+    }));
+
+    show_macos_notification("Janus Update", "Update downloaded! The installer disk image is open on your desktop.");
+    Ok("Update downloaded successfully".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -735,7 +873,7 @@ pub fn run() {
             app.manage(state);
 
             // Create native macOS Menu Bar Status Item (Tray Icon) with Quick Experience Controls
-            if let (Ok(status_item), Ok(sep1), Ok(send_file_item), Ok(clip_item), Ok(mirror_item), Ok(downloads_item), Ok(sep2), Ok(show_item), Ok(sep3), Ok(quit_item)) = (
+            if let (Ok(status_item), Ok(sep1), Ok(send_file_item), Ok(clip_item), Ok(mirror_item), Ok(downloads_item), Ok(sep2), Ok(update_item), Ok(show_item), Ok(sep3), Ok(quit_item)) = (
                 MenuItemBuilder::with_id("status", "📱 Janus: Real-Time Bridge Active").enabled(false).build(app),
                 PredefinedMenuItem::separator(app),
                 MenuItemBuilder::with_id("send_file", "📁 Quick Send Files to Mobile...").build(app),
@@ -743,6 +881,7 @@ pub fn run() {
                 MenuItemBuilder::with_id("mirror", "📲 Start Screen Mirroring").build(app),
                 MenuItemBuilder::with_id("open_downloads", "📂 Open Received Files Folder").build(app),
                 PredefinedMenuItem::separator(app),
+                MenuItemBuilder::with_id("check_update", "✨ Check for Updates...").build(app),
                 MenuItemBuilder::with_id("show", "🌐 Open Janus Dashboard").build(app),
                 PredefinedMenuItem::separator(app),
                 MenuItemBuilder::with_id("quit", "⏻ Quit Janus").build(app),
@@ -755,6 +894,7 @@ pub fn run() {
                     .item(&mirror_item)
                     .item(&downloads_item)
                     .item(&sep2)
+                    .item(&update_item)
                     .item(&show_item)
                     .item(&sep3)
                     .item(&quit_item)
@@ -830,6 +970,14 @@ pub fn run() {
                                     "open_downloads" => {
                                         if let Some(download_dir) = dirs::download_dir() {
                                             let _ = std::process::Command::new("open").arg(download_dir).spawn();
+                                        }
+                                    }
+                                    "check_update" => {
+                                        if let Some(window) = app.get_webview_window("main") {
+                                            let _ = window.show();
+                                            let _ = window.unminimize();
+                                            let _ = window.set_focus();
+                                            let _ = window.emit("trigger-check-updates", ());
                                         }
                                     }
                                     "show" => {

@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "min_version": "1.0.0",
+  "release_date": "2026-08-20",
+  "title": "Janus Ecosystem Bridge v1.0.0",
+  "notes": [
+    "⚡ Zero-Interaction Fast-Path Auto-Connect (<400ms)",
+    "🍏 Native macOS Top Menu Bar Status & Quick Actions",
+    "📁 Instant File Drop & Streaming Engine",
+    "🛡️ Permanent WebSocket Keepalive & Connection Stability",
+    "☀️/🌙 Material 3 Dynamic Light & Dark Theme",
+    "📋 Real-time Universal Clipboard Sync"
+  ],
+  "downloads": {
+    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v1.0.0/app-debug.apk",
+    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v1.0.0/Janus.dmg",
+    "release_url": "https://github.com/Basithmd024/janus/releases/latest"
+  }
+}

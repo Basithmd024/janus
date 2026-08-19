@@ -199,6 +199,69 @@
     targetName: string;
   } | null>(null);
 
+  // In-App Real-Time Update State
+  let updateInfo = $state<{
+    current_version: string;
+    latest_version: string;
+    update_available: boolean;
+    release_notes: string[];
+    download_url: string;
+    release_url: string;
+  } | null>(null);
+  let isCheckingUpdate = $state<boolean>(false);
+  let isDownloadingUpdate = $state<boolean>(false);
+  let updateProgress = $state<number>(0);
+  let showUpdateModal = $state<boolean>(false);
+
+  async function checkForUpdates(manual = false) {
+    if (isCheckingUpdate) return;
+    
+    // 24-hr cache check unless manual
+    if (!manual && typeof localStorage !== 'undefined') {
+      const lastCheck = localStorage.getItem('janus_last_update_check');
+      if (lastCheck && Date.now() - parseInt(lastCheck) < 24 * 60 * 60 * 1000) {
+        return;
+      }
+    }
+
+    isCheckingUpdate = true;
+    try {
+      const info = await invoke<any>("check_for_updates");
+      updateInfo = info;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('janus_last_update_check', String(Date.now()));
+      }
+      if (info && info.update_available) {
+        showUpdateModal = true;
+        showToast(`🚀 New update v${info.latest_version} is available!`, "info");
+      } else if (manual) {
+        showToast(`Janus is up to date! (v${info?.current_version || "1.0.0"})`, "success");
+      }
+    } catch (e) {
+      if (manual) showToast("Failed to check for updates: " + e, "error");
+    } finally {
+      isCheckingUpdate = false;
+    }
+  }
+
+  async function startUpdateDownload() {
+    if (!updateInfo || !updateInfo.download_url) return;
+    isDownloadingUpdate = true;
+    updateProgress = 15;
+    showToast("Downloading update DMG in background...", "info");
+    try {
+      await invoke("download_and_open_update", {
+        downloadUrl: updateInfo.download_url
+      });
+      showToast("🎉 Update downloaded! The installer is ready on your screen.", "success");
+      showUpdateModal = false;
+    } catch (e) {
+      showToast("Update download failed: " + e, "error");
+    } finally {
+      isDownloadingUpdate = false;
+    }
+  }
+
   function formatBytes(bytes: number, decimals = 1): string {
     if (!bytes || bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -1316,6 +1379,22 @@
       }, 4000);
     });
     unlisteners.push(unlistenFileComplete);
+
+    const unlistenTriggerUpdate = await listen("trigger-check-updates", () => {
+      checkForUpdates(true);
+    });
+    unlisteners.push(unlistenTriggerUpdate);
+
+    const unlistenUpdateProg = await listen<any>("update-download-progress", (event) => {
+      const p = event.payload?.progress;
+      if (p !== undefined) updateProgress = p;
+    });
+    unlisteners.push(unlistenUpdateProg);
+
+    // Initial background update check
+    setTimeout(() => {
+      checkForUpdates(false);
+    }, 2500);
   });
 
   onDestroy(() => {
@@ -1527,6 +1606,20 @@
     <!-- ═══════ OVERVIEW / HOMESCREEN TAB ═══════ -->
     {#if activeTab === 'overview'}
       <div class="tab-panel overview-tab">
+        {#if updateInfo?.update_available}
+          <div class="update-hero-banner">
+            <div class="update-banner-left">
+              <span class="update-sparkle-icon">✨</span>
+              <div>
+                <strong>Janus Update v{updateInfo.latest_version} is available!</strong>
+                <p>New features and stability enhancements are ready for installation.</p>
+              </div>
+            </div>
+            <div class="update-banner-right">
+              <button class="btn btn-sm btn-primary" onclick={() => showUpdateModal = true}>Update Now</button>
+            </div>
+          </div>
+        {/if}
         <div class="panel-header">
           <div>
             <h2>Device Command Center</h2>
@@ -2214,6 +2307,38 @@
         
         <div class="settings-workspace">
           
+
+          <!-- Software Updates Card -->
+          <div class="settings-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" stroke="currentColor" stroke-width="1.5"/></svg>
+              Software Updates
+            </h3>
+            <div class="detail-grid">
+              <div class="detail-row">
+                <span class="detail-label">Current Version</span>
+                <span class="detail-value mono">v{updateInfo?.current_version || "1.0.0"}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Update Status</span>
+                <span class="detail-value">
+                  {#if updateInfo?.update_available}
+                    <span class="badge-update">🚀 v{updateInfo.latest_version} Available</span>
+                  {:else}
+                    <span class="badge-latest">✅ Up to date</span>
+                  {/if}
+                </span>
+              </div>
+            </div>
+            <div style="margin-top: 14px; display: flex; gap: 10px; justify-content: flex-end;">
+              {#if updateInfo?.update_available}
+                <button class="btn btn-sm btn-primary" onclick={() => showUpdateModal = true}>View Update Details</button>
+              {/if}
+              <button class="btn btn-sm btn-outline" disabled={isCheckingUpdate} onclick={() => checkForUpdates(true)}>
+                {isCheckingUpdate ? "Checking..." : "Check for Updates"}
+              </button>
+            </div>
+          </div>
 
           <!-- Local Server Card -->
           <div class="settings-section">
@@ -4651,6 +4776,111 @@
     color: #2563eb;
   }
 
+
+  /* Update Banner & Modal */
+  .update-hero-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(56, 189, 248, 0.08));
+    border: 1px solid rgba(37, 99, 235, 0.25);
+    border-radius: 16px;
+    padding: 14px 20px;
+    margin-bottom: 20px;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .update-banner-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .update-sparkle-icon {
+    font-size: 1.5rem;
+  }
+
+  .update-banner-left strong {
+    font-size: 0.95rem;
+    color: var(--text-primary, #0f172a);
+    display: block;
+  }
+
+  .update-banner-left p {
+    font-size: 0.82rem;
+    color: var(--text-secondary, #64748b);
+    margin: 2px 0 0 0;
+  }
+
+  .badge-update {
+    color: #2563eb;
+    font-weight: 600;
+  }
+
+  .badge-latest {
+    color: #10b981;
+    font-weight: 500;
+  }
+
+  .update-modal {
+    max-width: 480px;
+    width: 90%;
+  }
+
+  .update-badge-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(37, 99, 235, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .update-modal-body {
+    padding: 18px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .release-notes-box {
+    background: var(--bg-surface, rgba(241, 245, 249, 0.6));
+    border-radius: 12px;
+    padding: 14px 18px;
+  }
+
+  .release-notes-box h4 {
+    margin: 0 0 8px 0;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary, #0f172a);
+  }
+
+  .release-notes-box ul {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 0.83rem;
+    color: var(--text-secondary, #64748b);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .update-progress-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .progress-label-line {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-secondary, #64748b);
+  }
+
 </style>
 
 
@@ -4693,3 +4923,60 @@
 
 
 
+
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- IN-APP UPDATE MODAL                                     -->
+<!-- ═══════════════════════════════════════════════════════ -->
+{#if showUpdateModal && updateInfo}
+  <div class="modal-backdrop" onclick={() => !isDownloadingUpdate && (showUpdateModal = false)} role="dialog" aria-modal="true">
+    <div class="modal-card update-modal" onclick={(e) => e.stopPropagation()} role="document">
+      <div class="modal-header">
+        <div class="update-badge-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M12 2v10m0 0l4-4m-4 4L8 8m13 8v3a2 2 0 01-2 2H5a2 2 0 01-2-2v-3" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <h3>Janus v{updateInfo.latest_version} Ready</h3>
+          <p class="modal-sub">You are currently running v{updateInfo.current_version}</p>
+        </div>
+        <button class="btn-close" onclick={() => showUpdateModal = false} disabled={isDownloadingUpdate} aria-label="Close">✕</button>
+      </div>
+
+      <div class="update-modal-body">
+        <div class="release-notes-box">
+          <h4>What's New:</h4>
+          <ul>
+            {#if updateInfo.release_notes && updateInfo.release_notes.length > 0}
+              {#each updateInfo.release_notes as note}
+                <li>{note}</li>
+              {/each}
+            {:else}
+              <li>⚡ Real-time performance improvements and connection hardening</li>
+              <li>🍏 Native macOS top Menu Bar quick actions</li>
+              <li>📁 Fast file streaming engine</li>
+            {/if}
+          </ul>
+        </div>
+
+        {#if isDownloadingUpdate}
+          <div class="update-progress-container">
+            <div class="progress-label-line">
+              <span>Downloading Update DMG...</span>
+              <span>{updateProgress}%</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" style="width: {updateProgress}%"></div>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick={() => showUpdateModal = false} disabled={isDownloadingUpdate}>Later</button>
+        <button class="btn btn-primary" onclick={startUpdateDownload} disabled={isDownloadingUpdate}>
+          {isDownloadingUpdate ? `Downloading (${updateProgress}%)...` : "⬇️ Download & Install DMG"}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
