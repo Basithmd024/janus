@@ -1148,6 +1148,21 @@ class MainActivity : ComponentActivity() {
                                                     writer.write(entry.toString() + "\n")
                                                 }
                                                 
+                                                if (isConnectedState.value) {
+                                                    val payload = com.google.gson.JsonObject().apply {
+                                                        addProperty("feedback_type", feedbackTypeState)
+                                                        addProperty("email", feedbackEmailState)
+                                                        addProperty("message", feedbackMessageState)
+                                                    }
+                                                    val packet = Packet(
+                                                        type = "feedback.submit",
+                                                        id = java.util.UUID.randomUUID().toString(),
+                                                        timestamp = System.currentTimeMillis() / 1000,
+                                                        payload = payload
+                                                    )
+                                                    janusService?.connectionManager?.sendPacket(packet)
+                                                }
+                                                
                                                 Toast.makeText(context, "Feedback submitted successfully!", Toast.LENGTH_SHORT).show()
                                                 feedbackMessageState = ""
                                                 feedbackEmailState = ""

@@ -515,6 +515,42 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                 }
             }
         }
+        "feedback.submit" => {
+            if let (Some(feedback_type), Some(message)) = (
+                packet.payload.get("feedback_type").and_then(|v| v.as_str()),
+                packet.payload.get("message").and_then(|v| v.as_str())
+            ) {
+                let email = packet.payload.get("email").and_then(|v| v.as_str()).unwrap_or("");
+                
+                use std::fs::OpenOptions;
+                use std::io::Write;
+                
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                    
+                let feedback_entry = serde_json::json!({
+                    "timestamp": timestamp,
+                    "feedback_type": format!("android.{}", feedback_type),
+                    "email": email,
+                    "message": message
+                });
+                
+                let file_path = "/Users/basith/Desktop/janus/feedback.json";
+                if let Ok(mut file) = OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .append(true)
+                    .open(file_path)
+                {
+                    let entry_str = format!("{}
+", serde_json::to_string(&feedback_entry).unwrap());
+                    let _ = file.write_all(entry_str.as_bytes());
+                    println!("📝 Appended Android feedback to {}", file_path);
+                }
+            }
+        }
         _ => {}
     }
 }
