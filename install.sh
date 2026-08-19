@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ════════════════════════════════════════════════════════════════════════════
 #  JANUS ECOSYSTEM BRIDGE — ONE-LINE COMMAND LINE INSTALLER & TOOLCHAIN
-#  https://github.com/Basithmd123/Mgit
+#  https://github.com/Basithmd024/janus
 # ════════════════════════════════════════════════════════════════════════════
 
 set -e
@@ -37,6 +37,26 @@ ARCH="$(uname -m)"
 
 echo -e "  ${BOLD}Platform:${NC} ${GREEN}${OS}${NC} (${ARCH})"
 echo -e "  ${BOLD}Protocol:${NC} ${PURPLE}TLS 1.3 WebSocket P2P + mDNS Zero-Config${NC}\n"
+
+# Auto-detect Android SDK location on macOS / Linux
+if [ -z "$ANDROID_HOME" ]; then
+    if [ -d "$HOME/Library/Android/sdk" ]; then
+        export ANDROID_HOME="$HOME/Library/Android/sdk"
+        export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/tools:$PATH"
+    elif [ -d "/opt/android-sdk" ]; then
+        export ANDROID_HOME="/opt/android-sdk"
+        export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/tools:$PATH"
+    fi
+fi
+
+# Ensure local.properties exists for Gradle if SDK is found
+if [ -n "$ANDROID_HOME" ] && [ -d "$ANDROID_HOME" ]; then
+    mkdir -p android-app
+    if [ ! -f "android-app/local.properties" ]; then
+        echo "sdk.dir=$ANDROID_HOME" > android-app/local.properties
+        echo -e "  [${GREEN}✓${NC}] Configured Android SDK: ${ANDROID_HOME}"
+    fi
+fi
 
 # 1. Dependency Checks
 echo -e "${CYAN}🔍 Checking System Toolchains:${NC}"
@@ -88,20 +108,24 @@ npm install --silent
 # 4. Android Build & Deployment
 if [ "$INSTALL_ANDROID" = true ]; then
     echo -e "\n${CYAN}🤖 Building Android APK with CameraX & ZXing...${NC}"
-    cd android-app
-    ./gradlew assembleDebug --quiet
-    cd ..
-    
-    if command -v adb >/dev/null 2>&1; then
-        DEVICES=$(adb devices | grep -v "List" | grep "device" || true)
-        if [ -n "$DEVICES" ]; then
-            echo -e "${GREEN}📱 Found connected Android device. Installing APK...${NC}"
-            adb install -r android-app/app/build/outputs/apk/debug/app-debug.apk
-            echo -e "${GREEN}✓ Launching Janus Bridge on phone...${NC}"
-            adb shell am start -n com.janus.app/.MainActivity
-        else
-            echo -e "${YELLOW}ℹ️ No Android device found via ADB. APK is ready at: android-app/app/build/outputs/apk/debug/app-debug.apk${NC}"
+    if [ -d "$ANDROID_HOME" ]; then
+        cd android-app
+        ./gradlew assembleDebug --quiet || true
+        cd ..
+        
+        if command -v adb >/dev/null 2>&1; then
+            DEVICES=$(adb devices | grep -v "List" | grep "device" || true)
+            if [ -n "$DEVICES" ]; then
+                echo -e "${GREEN}📱 Found connected Android device. Installing APK...${NC}"
+                adb install -r android-app/app/build/outputs/apk/debug/app-debug.apk
+                echo -e "${GREEN}✓ Launching Janus Bridge on phone...${NC}"
+                adb shell am start -n com.janus.app/.MainActivity || true
+            else
+                echo -e "${YELLOW}ℹ️ No Android device found via ADB. APK is ready at: android-app/app/build/outputs/apk/debug/app-debug.apk${NC}"
+            fi
         fi
+    else
+        echo -e "${YELLOW}⚠️ Android SDK not found. Skipping APK build. You can run Desktop Command Center directly!${NC}"
     fi
 fi
 
