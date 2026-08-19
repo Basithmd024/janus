@@ -331,9 +331,7 @@
       console.warn("get_sms_messages error:", e);
     }
 
-    try {
-      await invoke("request_device_status");
-    } catch (e) {}
+    // Telemetry is automatically pushed on change by Android hardware driver
   }
 
   async function selectTab(tab: string) {

@@ -136,9 +136,7 @@ class MainActivity : ComponentActivity() {
                 isConnectedState.value = connected
             }
             s.onPacketReceived = { packet: Packet ->
-                runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Received: ${packet.type}", Toast.LENGTH_SHORT).show()
-                }
+                // Handled silently without Toast popups
             }
             s.onUploadProgress = { sessionId, fileHash, bytesReceived, totalBytes, name ->
                 runOnUiThread {
