@@ -2167,6 +2167,24 @@
         </div>
         
         <div class="settings-workspace">
+          <!-- Cinematic Intro Experience -->
+          <div class="settings-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/></svg>
+              Cinematic Experience
+            </h3>
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-subtle); margin-bottom: 20px;">
+              <div>
+                <div style="font-weight: 600; font-size: 14px;">Janus Intro Sequence (1080p)</div>
+                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Watch the unified ecosystem opening sequence</div>
+              </div>
+              <button class="btn btn-sm btn-primary" onclick={playIntro} style="display: flex; align-items: center; gap: 6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/></svg>
+                <span>Play Intro</span>
+              </button>
+            </div>
+          </div>
+
           <!-- Local Server Card -->
           <div class="settings-section">
             <h3 class="section-title">
@@ -2252,6 +2270,35 @@
       </div>
     {/if}
   </main>
+
+  <!-- Cinematic Intro Video Modal -->
+  {#if showIntroModal}
+    <div class="intro-modal-overlay" onclick={closeIntro} role="dialog" aria-modal="true">
+      <div class="intro-modal-card" onclick={(e) => e.stopPropagation()}>
+        <div class="intro-video-wrapper">
+          <video 
+            src="/videos/intro.mp4" 
+            autoplay 
+            controls
+            playsinline
+            onended={closeIntro}
+            class="intro-video-element"
+          >
+            <track kind="captions" />
+          </video>
+        </div>
+        <div class="intro-controls-bar">
+          <div class="intro-info">
+            <span class="intro-title">JANUS</span>
+            <span class="intro-subtitle">Unified Ecosystem Bridge</span>
+          </div>
+          <button class="btn btn-sm btn-outline" onclick={closeIntro}>
+            <span>Skip / Close ✕</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   <!-- Pairing Setup Modal -->
   {#if showPairingModal}
@@ -4450,6 +4497,88 @@
     0% { transform: scale(0.5); }
     100% { transform: scale(1); }
   }
+
+  /* ═══════════════════════════════════════════════════════ */
+  /* CINEMATIC INTRO MODAL CSS                               */
+  /* ═══════════════════════════════════════════════════════ */
+  .intro-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.88);
+    backdrop-filter: blur(16px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .intro-modal-card {
+    background: #09090b;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    overflow: hidden;
+    max-width: 960px;
+    width: 100%;
+    box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.7), 0 0 50px rgba(37, 99, 235, 0.2);
+    display: flex;
+    flex-direction: column;
+    animation: scaleIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .intro-video-wrapper {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .intro-video-element {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .intro-controls-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    background: rgba(18, 18, 20, 0.95);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .intro-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .intro-title {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #38bdf8;
+  }
+
+  .intro-subtitle {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes scaleIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
 </style>
 
 
@@ -4488,4 +4617,7 @@
     <button class="hud-close-btn" onclick={() => activeFileTransfer = null} aria-label="Dismiss">✕</button>
   </div>
 {/if}
+
+
+
 
