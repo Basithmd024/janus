@@ -621,19 +621,34 @@ class JanusService : Service() {
         connectionManager?.sendPacket(packet)
     }
 
-    /** Read current battery level from the sticky ACTION_BATTERY_CHANGED intent */
+    /** Read current real hardware battery capacity */
     private fun readInitialBattery() {
         try {
+            val bm = getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+            if (bm != null) {
+                val cap = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                if (cap in 0..100) {
+                    currentBatteryLevel = cap
+                }
+                val status = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_STATUS)
+                currentIsCharging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
+                                    status == android.os.BatteryManager.BATTERY_STATUS_FULL
+            }
+
             val batteryStatus = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             if (batteryStatus != null) {
                 val level = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
                 val scale = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1)
                 val status = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1)
-                currentIsCharging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
-                                    status == android.os.BatteryManager.BATTERY_STATUS_FULL
-                currentBatteryLevel = if (level >= 0 && scale > 0) (level * 100) / scale else 100
-                Log.d("JanusService", "🔋 Read initial battery: $currentBatteryLevel%, charging=$currentIsCharging")
+                if (status != -1) {
+                    currentIsCharging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
+                                        status == android.os.BatteryManager.BATTERY_STATUS_FULL
+                }
+                if (currentBatteryLevel < 0 && level >= 0 && scale > 0) {
+                    currentBatteryLevel = (level * 100) / scale
+                }
             }
+            Log.d("JanusService", "🔋 Read real-time battery: $currentBatteryLevel%, charging=$currentIsCharging")
         } catch (e: Exception) {
             Log.e("JanusService", "Failed to read initial battery", e)
         }

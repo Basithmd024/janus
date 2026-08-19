@@ -144,9 +144,9 @@
   let currentLocalTime = $state<string>("");
   let timeInterval: ReturnType<typeof setInterval> | null = null;
 
-  // System Bridge Telemetry with localStorage caching
-  let cachedBattery = typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('janus_last_battery') || '85') : 85;
-  let cachedSignal = typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('janus_last_signal') || '4') : 4;
+  // System Bridge Telemetry (Real-time live sync)
+  let cachedBattery = typeof localStorage !== 'undefined' && localStorage.getItem('janus_last_battery') ? parseInt(localStorage.getItem('janus_last_battery')!) : null;
+  let cachedSignal = typeof localStorage !== 'undefined' && localStorage.getItem('janus_last_signal') ? parseInt(localStorage.getItem('janus_last_signal')!) : null;
   let deviceBattery = $state<number | null>(cachedBattery);
   let deviceIsCharging = $state<boolean>(false);
   let deviceSignal = $state<number | null>(cachedSignal);

@@ -144,11 +144,20 @@ class ConnectionManager(
                 reconnectAttempts = 0
                 mainHandler.post { onConnectionStateChanged(true) }
 
+                // Read real hardware battery
+                val bm = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+                val realCap = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+                val realStatus = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_STATUS) ?: -1
+                val isCharging = realStatus == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
+                                 realStatus == android.os.BatteryManager.BATTERY_STATUS_FULL
+
                 // Send register packet immediately
                 val registerPayload = JsonObject().apply {
                     addProperty("fingerprint", identity.fingerprint)
                     addProperty("device_name", android.os.Build.MODEL)
                     addProperty("device_type", "android")
+                    if (realCap in 0..100) addProperty("battery_level", realCap)
+                    addProperty("is_charging", isCharging)
                     DiscoveryManager.getLocalWifiIp(context)?.let { addProperty("ip", it) }
                     addProperty("port", 53318)
                     pairingPin?.let { addProperty("pin", it) }
