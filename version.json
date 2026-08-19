@@ -1,17 +1,17 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "min_version": "1.0.0",
   "release_date": "2026-08-20",
-  "title": "Janus Mobile Update v1.0.1",
+  "title": "Janus Mobile Update v1.0.2 — Executive Dashboard Redesign",
   "notes": [
-    "Removed test demo options for senior production build",
-    "Added First-Launch Onboarding Username Setup",
-    "Added In-App Bug Reporter with GitHub Issue proxy sync",
-    "Added 500-entry max notification storage cap"
+    "Fixed bug reporter toast error message formatting",
+    "Redesigned Mobile Dashboard matching reference UI layout",
+    "Added dynamic time-of-day greeting (Hi Babbi, Good Evening, Thursday, 20 August)",
+    "Added 2-column ESSENTIALS and TOOLS pastel tile grid"
   ],
   "downloads": {
-    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v1.0.1/app-debug.apk",
-    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v1.0.1/Janus.dmg",
-    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v1.0.1"
+    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v1.0.2/app-debug.apk",
+    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v1.0.2/Janus.dmg",
+    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v1.0.2"
   }
 }
