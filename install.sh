@@ -15,7 +15,7 @@ RED='\033[0;31m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-clear
+clear 2>/dev/null || true
 
 echo -e "${PURPLE}${BOLD}"
 cat << "BANNER"
