@@ -155,9 +155,23 @@ npm run tauri build
 
 ---
 
-### 📱 Step 3 — Build & Install the Android App
+### 📱 Step 3 — Install the Android App
 
-#### Build the APK
+#### ⚡ Option 1: Direct Download (No Android Studio Needed — Easiest!)
+
+> **Download the pre-built APK directly — no tools required!**
+
+1. Go to the [**Releases page**](https://github.com/Basithmd024/janus/releases/latest)
+2. Under **Assets**, tap **`Janus-Android-v1.0.0.apk`** to download
+3. **On your phone** — open the downloaded APK and tap **Install**
+4. If prompted *"Install from unknown sources"* → tap **Settings** → enable it → go back and install
+
+> ✅ That's it! No Android Studio, no terminal commands needed.
+
+---
+
+#### 🔧 Option 2: Build from Source (Needs Android Studio)
+
 ```bash
 # From inside the janus directory
 cd android-app
