@@ -54,6 +54,10 @@ pub struct ServerState {
     pub client_fingerprints: Mutex<HashMap<String, String>>, // client_id -> fingerprint
     pub active_devices: Mutex<HashMap<String, (String, DeviceInfo)>>, // fingerprint -> (client_id, DeviceInfo)
     pub current_pairing_pin: Mutex<Option<String>>,
+    pub last_telemetry: Mutex<Option<serde_json::Value>>,
+    pub recent_notifications: Mutex<Vec<serde_json::Value>>,
+    pub call_history: Mutex<Vec<serde_json::Value>>,
+    pub sms_messages: Mutex<Vec<serde_json::Value>>,
     pub app_handle: AppHandle,
     pub clipboard_state: Arc<ClipboardState>,
 }
@@ -311,6 +315,17 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             
             show_macos_notification(title, text);
 
+            // Store in persistent state
+            {
+                let mut notifs = state.recent_notifications.lock().unwrap();
+                let notif_id = packet.payload.get("notification_id").and_then(|v| v.as_str()).unwrap_or("");
+                notifs.retain(|n| n.get("notification_id").and_then(|v| v.as_str()).unwrap_or("") != notif_id);
+                notifs.push(packet.payload.clone());
+                if notifs.len() > 50 {
+                    notifs.remove(0);
+                }
+            }
+
             // Forward the full notification payload to the Svelte frontend
             println!("🔔 Received notification from Android: {:?}", title);
             let _ = state.app_handle.emit("notification-new", packet.payload);
@@ -345,6 +360,9 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             let _ = state.app_handle.emit("call-state", packet.payload);
         }
         "calls.list" => {
+            if let Some(calls) = packet.payload.get("calls").and_then(|v| v.as_array()) {
+                *state.call_history.lock().unwrap() = calls.clone();
+            }
             let call_count = packet.payload.get("calls")
                 .and_then(|v| v.as_array())
                 .map(|a| a.len())
@@ -353,6 +371,9 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             let _ = state.app_handle.emit("calls-list", packet.payload);
         }
         "sms.list" => {
+            if let Some(messages) = packet.payload.get("messages").and_then(|v| v.as_array()) {
+                *state.sms_messages.lock().unwrap() = messages.clone();
+            }
             let sms_count = packet.payload.get("messages")
                 .and_then(|v| v.as_array())
                 .map(|a| a.len())
@@ -362,10 +383,12 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
         }
         "device.status" => {
             println!("📡 Received device telemetry: {}", packet.payload);
+            *state.last_telemetry.lock().unwrap() = Some(packet.payload.clone());
             let _ = state.app_handle.emit("device-status", packet.payload);
         }
         "device.ready" => {
             println!("🟢 Phone confirmed connected and ready: {}", packet.payload);
+            *state.last_telemetry.lock().unwrap() = Some(packet.payload.clone());
             let _ = state.app_handle.emit("device-ready", packet.payload.clone());
             let _ = state.app_handle.emit("device-status", packet.payload);
         }

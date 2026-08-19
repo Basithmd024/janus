@@ -616,6 +616,30 @@ async fn sync_sms(
 }
 
 #[tauri::command]
+async fn get_latest_telemetry(state: State<'_, SharedState>) -> Result<serde_json::Value, String> {
+    let t = state.last_telemetry.lock().unwrap();
+    Ok(t.clone().unwrap_or(serde_json::json!({})))
+}
+
+#[tauri::command]
+async fn get_recent_notifications(state: State<'_, SharedState>) -> Result<Vec<serde_json::Value>, String> {
+    let notifs = state.recent_notifications.lock().unwrap();
+    Ok(notifs.clone())
+}
+
+#[tauri::command]
+async fn get_call_history(state: State<'_, SharedState>) -> Result<Vec<serde_json::Value>, String> {
+    let history = state.call_history.lock().unwrap();
+    Ok(history.clone())
+}
+
+#[tauri::command]
+async fn get_sms_messages(state: State<'_, SharedState>) -> Result<Vec<serde_json::Value>, String> {
+    let msgs = state.sms_messages.lock().unwrap();
+    Ok(msgs.clone())
+}
+
+#[tauri::command]
 async fn request_device_status(state: State<'_, SharedState>) -> Result<(), String> {
     let clients = state.active_ws_clients.lock().unwrap();
     let packet = crate::protocol::Packet {
@@ -660,6 +684,10 @@ pub fn run() {
                 client_fingerprints: Mutex::new(HashMap::new()),
                 active_devices: Mutex::new(HashMap::new()),
                 current_pairing_pin: Mutex::new(None),
+                last_telemetry: Mutex::new(None),
+                recent_notifications: Mutex::new(Vec::new()),
+                call_history: Mutex::new(Vec::new()),
+                sms_messages: Mutex::new(Vec::new()),
                 app_handle: app.handle().clone(),
                 clipboard_state: clipboard_state.clone(),
             });

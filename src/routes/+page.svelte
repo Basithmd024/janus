@@ -270,7 +270,41 @@
   // Functions
   // ──────────────────────────────────────────────
 
+  async function syncLiveState() {
+    try {
+      await loadConnectedDevices();
+      await loadPairedDevices();
+
+      const telemetry = await invoke<any>("get_latest_telemetry");
+      if (telemetry && telemetry.battery_level !== undefined && telemetry.battery_level !== null) {
+        deviceBattery = telemetry.battery_level;
+        deviceIsCharging = telemetry.is_charging || false;
+        deviceSignal = telemetry.signal_level ?? 4;
+      }
+
+      const notifs = await invoke<any[]>("get_recent_notifications");
+      if (notifs && notifs.length > 0) {
+        activeNotifications = notifs;
+      }
+
+      const calls = await invoke<any[]>("get_call_history");
+      if (calls && calls.length > 0) {
+        callHistory = calls;
+      }
+
+      const sms = await invoke<any[]>("get_sms_messages");
+      if (sms && sms.length > 0) {
+        smsMessages = sms;
+      }
+
+      invoke("request_device_status").catch(() => {});
+    } catch (e) {
+      console.error("Live state sync error:", e);
+    }
+  }
+
   async function selectTab(tab: string) {
+    syncLiveState();
     activeTab = tab;
     if (tab === "history") {
       try {
@@ -863,12 +897,10 @@
     await loadIdentity();
     await loadPairedDevices();
     await loadConnectedDevices();
+    await syncLiveState();
     const connCheckInterval = setInterval(() => {
-      loadConnectedDevices();
-      invoke("request_device_status").catch(() => {});
-    }, 2000);
-    // Request status immediately on mount
-    invoke("request_device_status").catch(() => {});
+      syncLiveState();
+    }, 1500);
     onDestroy(() => clearInterval(connCheckInterval));
     
     // Auto-generate pairing PIN on startup
