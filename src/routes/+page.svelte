@@ -51,6 +51,10 @@
   let showPairingModal = $state<boolean>(false);
   let qrCanvas = $state<HTMLCanvasElement | null>(null);
   let homeQrCanvas = $state<HTMLCanvasElement | null>(null);
+  let feedbackType = $state<string>("bug");
+  let feedbackEmail = $state<string>("");
+  let feedbackMessage = $state<string>("");
+  let isSubmittingFeedback = $state<boolean>(false);
 
   async function ensureIdentityAndPin() {
     try {
@@ -572,6 +576,26 @@
       }
     } catch (e) {
       showToast("Clipboard sync error: " + e, "error");
+    }
+  }
+
+  async function submitFeedback() {
+    if (!feedbackMessage) return;
+    isSubmittingFeedback = true;
+    try {
+      await invoke("submit_feedback", {
+        feedbackType,
+        email: feedbackEmail,
+        message: feedbackMessage
+      });
+      showToast("Feedback submitted successfully!", "success");
+      feedbackMessage = "";
+      feedbackEmail = "";
+      feedbackType = "bug";
+    } catch (e) {
+      showToast("Failed to submit feedback: " + e, "error");
+    } finally {
+      isSubmittingFeedback = false;
     }
   }
 
@@ -2454,6 +2478,42 @@
               {#if unpairedDiscovered.length === 0}
                 <p class="hint-text">Scanning local network for new Janus nodes...</p>
               {/if}
+            </div>
+          </div>
+
+          <!-- Share Feedback -->
+          <div class="settings-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Share Feedback
+            </h3>
+            <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 12px; margin-top: -6px;">
+              Encountered a bug or want to suggest a feature? Tell us what you are experiencing.
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; gap: 10px;">
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                  <label style="font-size: 0.7rem; font-weight: bold; color: var(--text-secondary);">Feedback Type</label>
+                  <select bind:value={feedbackType} style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 6px 10px; font-size: 0.8rem; color: var(--text-primary); outline: none;">
+                    <option value="bug">Bug Report</option>
+                    <option value="feature">Feature Request</option>
+                    <option value="other">General Feedback</option>
+                  </select>
+                </div>
+                <div style="flex: 2; display: flex; flex-direction: column; gap: 4px;">
+                  <label style="font-size: 0.7rem; font-weight: bold; color: var(--text-secondary);">Email (Optional)</label>
+                  <input type="email" placeholder="your@email.com" bind:value={feedbackEmail} style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 6px 10px; font-size: 0.8rem; color: var(--text-primary); outline: none;" />
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label style="font-size: 0.7rem; font-weight: bold; color: var(--text-secondary);">Message</label>
+                <textarea rows="3" placeholder="Describe the issue or feature request in detail..." bind:value={feedbackMessage} style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 8px 10px; font-size: 0.8rem; color: var(--text-primary); resize: vertical; min-height: 60px; font-family: inherit; outline: none;"></textarea>
+              </div>
+              <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+                <button class="btn btn-sm btn-primary" onclick={submitFeedback} disabled={!feedbackMessage || isSubmittingFeedback}>
+                  {isSubmittingFeedback ? "Submitting..." : "Submit Feedback"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

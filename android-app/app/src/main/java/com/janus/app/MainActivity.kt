@@ -471,6 +471,11 @@ class MainActivity : ComponentActivity() {
 
         var updateInfoState by remember { mutableStateOf<AppUpdateInfo?>(null) }
         var isCheckingUpdate by remember { mutableStateOf(false) }
+        
+        var feedbackTypeState by remember { mutableStateOf("Bug Report") }
+        var feedbackEmailState by remember { mutableStateOf("") }
+        var feedbackMessageState by remember { mutableStateOf("") }
+        var isSubmittingFeedbackState by remember { mutableStateOf(false) }
 
         LaunchedEffect(Unit) {
             updateInfoState = checkMobileAppUpdate()
@@ -1039,60 +1044,22 @@ class MainActivity : ComponentActivity() {
                                 }
                                 Spacer(modifier = Modifier.height(14.dp))
                                 
-                                // Action buttons including Demo Test button
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Row(
+                                    OutlinedButton(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        OutlinedButton(
-                                            modifier = Modifier.weight(1f),
-                                            onClick = {
-                                                coroutineScope.launch {
-                                                    isCheckingUpdate = true
-                                                    updateInfoState = checkMobileAppUpdate()
-                                                    isCheckingUpdate = false
-                                                    Toast.makeText(context, if (updateInfoState?.isUpdateAvailable == true) "Update found: v${updateInfoState?.latestVersion}!" else "Janus is up to date! (v1.0.0)", Toast.LENGTH_SHORT).show()
-                                                }
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                isCheckingUpdate = true
+                                                updateInfoState = checkMobileAppUpdate()
+                                                isCheckingUpdate = false
+                                                Toast.makeText(context, if (updateInfoState?.isUpdateAvailable == true) "Update found: v${updateInfoState?.latestVersion}!" else "Janus is up to date! (v1.0.0)", Toast.LENGTH_SHORT).show()
                                             }
-                                        ) {
-                                            Text(if (isCheckingUpdate) "Checking..." else "Check Updates", fontSize = 12.sp)
                                         }
-                                        
-                                        // Demo Testing Button for User
-                                        Button(
-                                            modifier = Modifier.weight(1.2f),
-                                            onClick = {
-                                                if (updateInfoState?.isUpdateAvailable == true) {
-                                                    // Reset back to normal
-                                                    updateInfoState = AppUpdateInfo(currentVersion = "1.0.0", latestVersion = "1.0.0", isUpdateAvailable = false)
-                                                    Toast.makeText(context, "Reset to normal version status", Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    // Trigger simulated Demo Update Prompt!
-                                                    updateInfoState = AppUpdateInfo(
-                                                        currentVersion = "1.0.0",
-                                                        latestVersion = "1.1.0",
-                                                        isUpdateAvailable = true,
-                                                        releaseNotes = listOf(
-                                                            "⚡ Fast-path auto-connect (<400ms)",
-                                                            "🍏 Native macOS Menu Bar quick-actions",
-                                                            "📁 Instant drag-and-drop file streaming",
-                                                            "🛡️ WebSocket ping-pong keepalive"
-                                                        ),
-                                                        apkUrl = "https://github.com/Basithmd024/janus/releases/download/v1.0.0/app-debug.apk"
-                                                    )
-                                                    Toast.makeText(context, "Demo Update Triggered. Check Dashboard tab.", Toast.LENGTH_LONG).show()
-                                                }
-                                            },
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = if (updateInfoState?.isUpdateAvailable == true) Color(0xFF64748B) else Color(0xFF8B5CF6)
-                                            )
-                                        ) {
-                                            Text(if (updateInfoState?.isUpdateAvailable == true) "Reset Demo" else "Test Update Demo", fontSize = 12.sp)
-                                        }
+                                    ) {
+                                        Text(if (isCheckingUpdate) "Checking..." else "Check Updates", fontSize = 13.sp)
                                     }
 
                                     if (updateInfoState?.isUpdateAvailable == true) {
@@ -1107,6 +1074,97 @@ class MainActivity : ComponentActivity() {
                                             Text("Download & Install Update APK", fontWeight = FontWeight.Bold)
                                         }
                                     }
+                                }
+                            }
+                        }
+
+                        // Share Feedback Card
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("Share Feedback", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    "Encountered a bug or want to suggest a feature? Tell us what you are experiencing.",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+
+                                Text("Feedback Type", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.LightGray)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val types = listOf("Bug Report", "Feature Request", "General")
+                                    types.forEach { type ->
+                                        val isSelected = feedbackTypeState == type
+                                        Button(
+                                            onClick = { feedbackTypeState = type },
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF1E293B)
+                                            ),
+                                            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(type, fontSize = 11.sp, color = if (isSelected) Color.White else Color.Gray)
+                                        }
+                                    }
+                                }
+
+                                OutlinedTextField(
+                                    value = feedbackEmailState,
+                                    onValueChange = { feedbackEmailState = it },
+                                    label = { Text("Email (Optional)", fontSize = 12.sp) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                                )
+
+                                OutlinedTextField(
+                                    value = feedbackMessageState,
+                                    onValueChange = { feedbackMessageState = it },
+                                    label = { Text("Message", fontSize = 12.sp) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    minLines = 3,
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                                )
+
+                                Button(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            isSubmittingFeedbackState = true
+                                            try {
+                                                val file = java.io.File(context.filesDir, "feedback.json")
+                                                val entry = org.json.JSONObject().apply {
+                                                    put("timestamp", System.currentTimeMillis())
+                                                    put("feedback_type", feedbackTypeState)
+                                                    put("email", feedbackEmailState)
+                                                    put("message", feedbackMessageState)
+                                                }
+                                                java.io.FileWriter(file, true).use { writer ->
+                                                    writer.write(entry.toString() + "\n")
+                                                }
+                                                
+                                                Toast.makeText(context, "Feedback submitted successfully!", Toast.LENGTH_SHORT).show()
+                                                feedbackMessageState = ""
+                                                feedbackEmailState = ""
+                                                feedbackTypeState = "Bug Report"
+                                            } catch (e: Exception) {
+                                                Toast.makeText(context, "Failed to submit feedback: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            } finally {
+                                                isSubmittingFeedbackState = false
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = feedbackMessageState.isNotBlank() && !isSubmittingFeedbackState,
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(if (isSubmittingFeedbackState) "Submitting..." else "Submit Feedback")
                                 }
                             }
                         }

@@ -721,6 +721,38 @@ fn is_version_newer(latest: &str, current: &str) -> bool {
 }
 
 #[tauri::command]
+async fn submit_feedback(feedback_type: String, email: String, message: String) -> Result<(), String> {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+        
+    let feedback_entry = serde_json::json!({
+        "timestamp": timestamp,
+        "feedback_type": feedback_type,
+        "email": email,
+        "message": message
+    });
+    
+    let file_path = "/Users/basith/Desktop/janus/feedback.json";
+    
+    let mut file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(true)
+        .open(file_path)
+        .map_err(|e| e.to_string())?;
+        
+    let entry_str = format!("{}\n", serde_json::to_string(&feedback_entry).unwrap());
+    file.write_all(entry_str.as_bytes()).map_err(|e| e.to_string())?;
+    
+    Ok(())
+}
+
+#[tauri::command]
 #[allow(dead_code)]
 async fn check_for_updates() -> Result<UpdateInfo, String> {
     let current_version = "1.0.0".to_string();
@@ -1034,7 +1066,8 @@ pub fn run() {
             sync_calls,
             sync_sms,
             check_for_updates,
-            download_and_open_update
+            download_and_open_update,
+            submit_feedback
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
