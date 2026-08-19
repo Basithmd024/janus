@@ -287,34 +287,53 @@
   async function syncLiveState() {
     try {
       await loadConnectedDevices();
-      await loadPairedDevices();
+    } catch (e) {}
 
+    try {
+      await loadPairedDevices();
+    } catch (e) {}
+
+    try {
       const telemetry = await invoke<any>("get_latest_telemetry");
       if (telemetry && telemetry.battery_level !== undefined && telemetry.battery_level !== null) {
         deviceBattery = telemetry.battery_level;
         deviceIsCharging = telemetry.is_charging || false;
         deviceSignal = telemetry.signal_level ?? 4;
       }
+    } catch (e) {
+      console.warn("get_latest_telemetry error:", e);
+    }
 
+    try {
       const notifs = await invoke<any[]>("get_recent_notifications");
       if (notifs && notifs.length > 0) {
         activeNotifications = notifs;
       }
+    } catch (e) {
+      console.warn("get_recent_notifications error:", e);
+    }
 
+    try {
       const calls = await invoke<any[]>("get_call_history");
       if (calls && calls.length > 0) {
         callHistory = calls;
       }
+    } catch (e) {
+      console.warn("get_call_history error:", e);
+    }
 
+    try {
       const sms = await invoke<any[]>("get_sms_messages");
       if (sms && sms.length > 0) {
         smsMessages = sms;
       }
-
-      invoke("request_device_status").catch(() => {});
     } catch (e) {
-      console.error("Live state sync error:", e);
+      console.warn("get_sms_messages error:", e);
     }
+
+    try {
+      await invoke("request_device_status");
+    } catch (e) {}
   }
 
   async function selectTab(tab: string) {
