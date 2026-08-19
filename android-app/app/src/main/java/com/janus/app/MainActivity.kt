@@ -75,6 +75,8 @@ class MainActivity : ComponentActivity() {
     private var activeTransferName = mutableStateOf<String?>(null)
     private var activeTransferProgress = mutableStateOf(0f)
     private var isOutgoingTransfer = mutableStateOf(false)
+    private var lastCompletedFileName = mutableStateOf<String?>(null)
+    private var lastCompletedFileSize = mutableStateOf<String?>(null)
     private var notificationAccessEnabled = mutableStateOf(false)
     private var isScreenMirroringActive = mutableStateOf(false)
     private var accessibilityEnabled = mutableStateOf(false)
@@ -147,9 +149,10 @@ class MainActivity : ComponentActivity() {
             }
             s.onUploadComplete = { sessionId, fileHash, fileName, uri ->
                 runOnUiThread {
+                    lastCompletedFileName.value = fileName
+                    lastCompletedFileSize.value = "Saved to Downloads/Janus"
                     activeTransferName.value = null
                     activeTransferProgress.value = 0f
-                    Toast.makeText(this@MainActivity, "Received file: $fileName", Toast.LENGTH_LONG).show()
                 }
             }
             s.onScreenMirrorRequest = {
@@ -550,28 +553,86 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        // File Transfer progress card
+                        // Active File Transfer Card with animation
                         if (activeTransferName.value != null) {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isOutgoingTransfer.value) "🚀 Sending file..." else "📥 Receiving file...",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = if (isOutgoingTransfer.value) "Sending file..." else "Receiving file...",
+                                        text = activeTransferName.value ?: "",
+                                        fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(activeTransferName.value ?: "", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.height(10.dp))
                                     LinearProgressIndicator(
                                         progress = { activeTransferProgress.value },
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier.fillMaxWidth().height(8.dp),
                                         color = MaterialTheme.colorScheme.primary
                                     )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text("${(activeTransferProgress.value * 100).toInt()}% completed", fontSize = 12.sp, color = Color.Gray)
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "${(activeTransferProgress.value * 100).toInt()}% transferred • High-speed Wi-Fi Mesh",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Completed File Transfer Banner
+                        if (lastCompletedFileName.value != null) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF10B981).copy(alpha = 0.12f)),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF10B981).copy(alpha = 0.6f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("✅", fontSize = 24.sp)
+                                        Column {
+                                            Text(
+                                                text = lastCompletedFileName.value ?: "",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = lastCompletedFileSize.value ?: "Delivered",
+                                                fontSize = 12.sp,
+                                                color = Color(0xFF10B981),
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                    IconButton(onClick = { lastCompletedFileName.value = null }) {
+                                        Text("✕", fontSize = 14.sp, color = Color.Gray)
+                                    }
                                 }
                             }
                         }

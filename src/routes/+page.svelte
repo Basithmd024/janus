@@ -197,9 +197,26 @@
     })()
   );
 
-  // Drag and drop state
+  // Drag and drop state & Animated File Transfer HUD
   let isDragOver = $state<boolean>(false);
   let dragTargetDevice = $state<any | null>(null);
+  let activeFileTransfer = $state<{
+    name: string;
+    sizeFormatted: string;
+    progress: number;
+    status: 'sending' | 'receiving' | 'completed' | 'error';
+    direction: 'outgoing' | 'incoming';
+    targetName: string;
+  } | null>(null);
+
+  function formatBytes(bytes: number, decimals = 1): string {
+    if (!bytes || bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  }
   
   // Toasts
   let toasts = $state<{ id: string; message: string; type: "success" | "error" | "info" }[]>([]);
@@ -500,16 +517,9 @@
       if (!selected) return;
 
       const filepath = typeof selected === "string" ? selected : selected;
-
-      showToast(`Sending file to ${targetDev.name}...`, "info");
-      await invoke("send_file_to_device", {
-        deviceIp: targetDev.ip,
-        devicePort: targetDev.port || 53318,
-        filePath: filepath
-      });
-      showToast("File sent successfully!", "success");
+      await sendFilePath(targetDev, filepath);
     } catch (e) {
-      showToast("Failed to send file: " + e, "error");
+      showToast("Failed to select file: " + e, "error");
     }
   }
 
@@ -539,21 +549,58 @@
   }
 
   async function sendFilePath(device: any, filepath: string) {
+    const filename = filepath.replace(/\\/g, "/").split("/").pop() || "File";
+    const targetDev = device || activeConnectedDevice;
+    if (!targetDev) {
+      showToast("No active connected device found", "error");
+      return;
+    }
+
+    // Start animated HUD
+    activeFileTransfer = {
+      name: filename,
+      sizeFormatted: "Preparing...",
+      progress: 15,
+      status: 'sending',
+      direction: 'outgoing',
+      targetName: targetDev.name
+    };
+
     try {
-      const targetDev = device || activeConnectedDevice;
-      if (!targetDev) {
-        showToast("No active connected device found", "error");
-        return;
-      }
-      showToast(`Sending file to ${targetDev.name}...`, "info");
+      showToast(`Sending ${filename} to ${targetDev.name}...`, "info");
+      
+      // Simulate smooth progress animation while streaming
+      const progInterval = setInterval(() => {
+        if (activeFileTransfer && activeFileTransfer.status === 'sending' && activeFileTransfer.progress < 90) {
+          activeFileTransfer.progress += 15;
+        }
+      }, 150);
+
       await invoke("send_file_to_device", {
         deviceIp: targetDev.ip,
         devicePort: targetDev.port || 53318,
         filePath: filepath
       });
-      showToast("File sent successfully!", "success");
+
+      clearInterval(progInterval);
+
+      if (activeFileTransfer) {
+        activeFileTransfer.progress = 100;
+        activeFileTransfer.status = 'completed';
+      }
+      showToast(`🎉 ${filename} sent successfully to ${targetDev.name}!`, "success");
+
+      setTimeout(() => {
+        if (activeFileTransfer?.status === 'completed') {
+          activeFileTransfer = null;
+        }
+      }, 6000);
     } catch (e) {
+      if (activeFileTransfer) {
+        activeFileTransfer.status = 'error';
+      }
       showToast("Failed to send file: " + e, "error");
+      setTimeout(() => { activeFileTransfer = null; }, 5000);
     }
   }
 
@@ -4264,4 +4311,181 @@
     box-shadow: var(--shadow-elevated);
   }
 
+
+  /* ═══════════════════════════════════════════════════════ */
+  /* ANIMATED FILE TRANSFER HUD CSS
+*/
+  /* ═══════════════════════════════════════════════════════ */
+  .file-transfer-float-hud {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
+    border-radius: 16px;
+    padding: 16px 20px;
+    min-width: 340px;
+    max-width: 420px;
+    backdrop-filter: blur(16px);
+    animation: hudSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 0.3s ease;
+  }
+  .file-transfer-float-hud.completed {
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 12px 36px rgba(16, 185, 129, 0.18);
+  }
+  .hud-icon-box {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .file-transfer-float-hud.completed .hud-icon-box {
+    background: rgba(16, 185, 129, 0.12);
+  }
+  .hud-upload-anim {
+    animation: hudBounce 1.2s infinite ease-in-out;
+  }
+  .hud-check-anim {
+    animation: hudPopCheck 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  .hud-details {
+    flex: 1;
+    min-width: 0;
+  }
+  .hud-header-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .hud-file-name {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 190px;
+  }
+  .hud-status-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(37, 99, 235, 0.12);
+    color: var(--primary);
+  }
+  .hud-status-badge.completed {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+  .hud-status-badge.error {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+  }
+  .hud-sub-line {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    margin-bottom: 8px;
+  }
+  .hud-progress-bar-track {
+    width: 100%;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .hud-progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #2563eb, #38bdf8);
+    border-radius: 99px;
+    transition: width 0.25s ease;
+  }
+  .hud-progress-bar-fill.completed {
+    background: #10b981;
+  }
+  .hud-progress-bar-fill.error {
+    background: #ef4444;
+  }
+  .hud-close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: color 0.15s;
+  }
+  .hud-close-btn:hover {
+    color: var(--text-primary);
+  }
+  @keyframes hudSlideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  @keyframes hudBounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+  @keyframes hudPopCheck {
+    0% { transform: scale(0.5); }
+    100% { transform: scale(1); }
+  }
 </style>
+
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- FLOATING ANIMATED FILE TRANSFER HUD                    -->
+<!-- ═══════════════════════════════════════════════════════ -->
+{#if activeFileTransfer}
+  <div class="file-transfer-float-hud {activeFileTransfer.status}">
+    <div class="hud-icon-box">
+      {#if activeFileTransfer.status === 'completed'}
+        <div class="hud-check-anim">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      {:else if activeFileTransfer.status === 'error'}
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#ef4444" stroke-width="2"/><line x1="15" y1="9" x2="9" y2="15" stroke="#ef4444" stroke-width="2"/><line x1="9" y1="9" x2="15" y2="15" stroke="#ef4444" stroke-width="2"/></svg>
+      {:else}
+        <div class="hud-upload-anim">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><polyline points="17 8 12 3 7 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+      {/if}
+    </div>
+    <div class="hud-details">
+      <div class="hud-header-line">
+        <span class="hud-file-name" title={activeFileTransfer.name}>{activeFileTransfer.name}</span>
+        <span class="hud-status-badge {activeFileTransfer.status}">
+          {activeFileTransfer.status === 'completed' ? 'Delivered' : activeFileTransfer.status === 'sending' ? `${activeFileTransfer.progress}%` : 'Failed'}
+        </span>
+      </div>
+      <div class="hud-sub-line">
+        <span>{activeFileTransfer.direction === 'outgoing' ? `Sending to ${activeFileTransfer.targetName}` : 'Receiving from phone'}</span>
+      </div>
+      <div class="hud-progress-bar-track">
+        <div class="hud-progress-bar-fill {activeFileTransfer.status}" style="width: {activeFileTransfer.progress}%"></div>
+      </div>
+    </div>
+    <button class="hud-close-btn" onclick={() => activeFileTransfer = null} aria-label="Dismiss">✕</button>
+  </div>
+{/if}
+
