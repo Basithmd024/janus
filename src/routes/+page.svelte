@@ -280,6 +280,17 @@
     )
   );
 
+  // Derived state: devices ready to receive file drops
+  let availableFileDropDevices = $derived(
+    (() => {
+      const list = pairedDevicesList.filter((d) => d.online);
+      if (list.length > 0) return list;
+      if (activeConnectedDevice) return [activeConnectedDevice];
+      if (discoveredDevices.length > 0) return discoveredDevices;
+      return [];
+    })()
+  );
+
   // ──────────────────────────────────────────────
   // Functions
   // ──────────────────────────────────────────────
@@ -476,19 +487,24 @@
 
   async function triggerFileSelect(device: any) {
     try {
+      const targetDev = device || activeConnectedDevice;
+      if (!targetDev) {
+        showToast("No active connected device found", "error");
+        return;
+      }
       const selected = await open({
         multiple: false,
-        title: `Select file to send to ${device.name}`,
+        title: `Select file to send to ${targetDev.name}`,
       });
 
       if (!selected) return;
 
       const filepath = typeof selected === "string" ? selected : selected;
 
-      showToast(`Sending file to ${device.name}...`, "info");
+      showToast(`Sending file to ${targetDev.name}...`, "info");
       await invoke("send_file_to_device", {
-        deviceIp: device.ip,
-        devicePort: device.port,
+        deviceIp: targetDev.ip,
+        devicePort: targetDev.port || 53318,
         filePath: filepath
       });
       showToast("File sent successfully!", "success");
@@ -524,10 +540,15 @@
 
   async function sendFilePath(device: any, filepath: string) {
     try {
-      showToast(`Sending file to ${device.name}...`, "info");
+      const targetDev = device || activeConnectedDevice;
+      if (!targetDev) {
+        showToast("No active connected device found", "error");
+        return;
+      }
+      showToast(`Sending file to ${targetDev.name}...`, "info");
       await invoke("send_file_to_device", {
-        deviceIp: device.ip,
-        devicePort: device.port,
+        deviceIp: targetDev.ip,
+        devicePort: targetDev.port || 53318,
         filePath: filepath
       });
       showToast("File sent successfully!", "success");
