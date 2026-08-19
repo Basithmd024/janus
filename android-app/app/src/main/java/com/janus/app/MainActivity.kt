@@ -221,23 +221,35 @@ class MainActivity : ComponentActivity() {
         bindService(intent, connection, Context.BIND_AUTO_CREATE)
 
         setContent {
-            val isDark = isSystemInDarkTheme()
+            val systemDark = isSystemInDarkTheme()
+            var isManualDark by remember { mutableStateOf<Boolean?>(null) }
+            val isDark = isManualDark ?: systemDark
+
             val colorScheme = if (isDark) {
                 darkColorScheme(
-                    primary = Color(0xFFC084FC),
-                    background = Color(0xFF0F0A1C),
-                    surface = Color(0xFF1E1535)
+                    primary = Color(0xFF3B82F6),
+                    primaryContainer = Color(0xFF1E293B),
+                    onPrimaryContainer = Color(0xFF93C5FD),
+                    background = Color(0xFF09090B),
+                    surface = Color(0xFF18181B),
+                    surfaceVariant = Color(0xFF27272A),
+                    onPrimary = Color.White,
+                    onBackground = Color(0xFFF8FAFC),
+                    onSurface = Color(0xFFF8FAFC),
+                    outline = Color(0xFF27272A)
                 )
             } else {
                 lightColorScheme(
-                    primary = Color(0xFF7C3AED),
-                    background = Color(0xFFF8F7FC),
+                    primary = Color(0xFF2563EB),
+                    primaryContainer = Color(0xFFEFF6FF),
+                    onPrimaryContainer = Color(0xFF1E40AF),
+                    background = Color(0xFFF8FAFC),
                     surface = Color(0xFFFFFFFF),
+                    surfaceVariant = Color(0xFFF1F5F9),
                     onPrimary = Color.White,
-                    onBackground = Color(0xFF1A1625),
-                    onSurface = Color(0xFF1A1625),
-                    surfaceVariant = Color(0xFFF0EDF5),
-                    outline = Color(0xFFD4D0DC)
+                    onBackground = Color(0xFF0F172A),
+                    onSurface = Color(0xFF0F172A),
+                    outline = Color(0xFFE2E8F0)
                 )
             }
             MaterialTheme(
@@ -267,7 +279,11 @@ class MainActivity : ComponentActivity() {
                     }
                     
                     if (isAuthenticated || forceLocalMode) {
-                        MainScreen(onOpenLogin = { forceLocalMode = false })
+                        MainScreen(
+                            isDark = isDark,
+                            onToggleTheme = { isManualDark = !isDark },
+                            onOpenLogin = { forceLocalMode = false }
+                        )
                     } else {
                         LoginScreen(onSkipToLocal = { forceLocalMode = true })
                     }
@@ -324,10 +340,14 @@ class MainActivity : ComponentActivity() {
             label = "springEntrance"
         )
 
+        val bg = MaterialTheme.colorScheme.background
+        val primary = MaterialTheme.colorScheme.primary
+        val surface = MaterialTheme.colorScheme.surface
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF090514))
+                .background(bg)
                 .clickable { onFinish() },
             contentAlignment = Alignment.Center
         ) {
@@ -340,7 +360,7 @@ class MainActivity : ComponentActivity() {
                         scaleY = pulseScale
                         alpha = pulseAlpha
                     }
-                    .background(Color(0xFFC084FC), androidx.compose.foundation.shape.CircleShape)
+                    .background(primary.copy(alpha = 0.25f), androidx.compose.foundation.shape.CircleShape)
             )
 
             Column(
@@ -357,15 +377,15 @@ class MainActivity : ComponentActivity() {
                 // Glassmorphic Logo Card
                 Card(
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1535)),
-                    border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFC084FC)),
+                    colors = CardDefaults.cardColors(containerColor = surface),
+                    border = androidx.compose.foundation.BorderStroke(2.dp, primary),
                     modifier = Modifier.size(96.dp)
                 ) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Share,
                             contentDescription = "Janus Bridge",
-                            tint = Color(0xFFC084FC),
+                            tint = primary,
                             modifier = Modifier.size(48.dp)
                         )
                     }
@@ -377,13 +397,13 @@ class MainActivity : ComponentActivity() {
                         text = "J A N U S",
                         fontSize = 32.sp,
                         fontWeight = FontWeight.Black,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onBackground,
                         letterSpacing = 6.sp
                     )
                     Text(
                         text = "Quantum Continuity Bridge",
                         fontSize = 13.sp,
-                        color = Color(0xFFC084FC),
+                        color = primary,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -394,7 +414,7 @@ class MainActivity : ComponentActivity() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     BadgePill(text = "⚡ TLS 1.3", color = Color(0xFF38BDF8))
-                    BadgePill(text = "🔒 SHA-256", color = Color(0xFFC084FC))
+                    BadgePill(text = "🔒 SHA-256", color = primary)
                     BadgePill(text = "0ms P2P", color = Color(0xFF34D399))
                 }
 
@@ -428,7 +448,11 @@ class MainActivity : ComponentActivity() {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    fun MainScreen(onOpenLogin: () -> Unit = {}) {
+    fun MainScreen(
+        isDark: Boolean = true,
+        onToggleTheme: () -> Unit = {},
+        onOpenLogin: () -> Unit = {}
+    ) {
         var pairingTarget by remember { mutableStateOf<NsdServiceInfo?>(null) }
         var showPairingDialog by remember { mutableStateOf(false) }
         var pairingPin by remember { mutableStateOf("") }
@@ -457,6 +481,14 @@ class MainActivity : ComponentActivity() {
                                         color = if (isConnectedState.value) Color(0xFF10B981) else Color(0xFFEF4444),
                                         shape = androidx.compose.foundation.shape.CircleShape
                                     )
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onToggleTheme) {
+                            Text(
+                                text = if (isDark) "☀️" else "🌙",
+                                fontSize = 18.sp
                             )
                         }
                     },
