@@ -1619,12 +1619,7 @@
       </button>
     </nav>
 
-    <div class="sidebar-footer">
-      <div class="sidebar-ver-tag">
-        <span>Janus Core</span>
-        <span class="mono">v{updateInfo?.current_version || "1.0.0"}</span>
-      </div>
-    </div>
+
   </aside>
 
   <!-- MAIN WORKSPACE -->
