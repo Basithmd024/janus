@@ -43,17 +43,7 @@
     document.documentElement.setAttribute('data-theme', currentTheme);
   }
 
-  // Intro Motion & Launch Animation State
-  let showIntro = $state<boolean>(true);
-  let introPhase = $state<number>(0); // 0: Logo draw, 1: Text reveal, 2: HUD scan, 3: Shutter exit
-  let particleCanvas = $state<HTMLCanvasElement | null>(null);
-
-  function dismissIntro() {
-    introPhase = 3;
-    setTimeout(() => {
-      showIntro = false;
-    }, 450);
-  }
+  // Intro & Splash completely disabled for instant launch
 
   // Local Device Identity
   let localIdentity = $state<Device | null>(null);
@@ -125,7 +115,7 @@
   let isScanning = $state<boolean>(false);
   let user = $state<any>(null);
   let bypassCloudAuth = $state<boolean>(true);
-  let isAuthInitializing = $state<boolean>(true);
+  let isAuthInitializing = $state<boolean>(false);
   let unsubscribeAuth = $state<any>(null);
   let unsubscribeDevices = $state<any>(null);
 
@@ -875,10 +865,7 @@
       document.documentElement.setAttribute('data-theme', currentTheme);
     }
 
-    // Start Intro Motion sequence
-    setTimeout(() => { introPhase = 1; }, 400);
-    setTimeout(() => { introPhase = 2; }, 1100);
-    setTimeout(() => { dismissIntro(); }, 2800);
+
 
     // Particle Canvas Animation
     if (particleCanvas) {
@@ -1306,17 +1293,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
 </svelte:head>
 
-{#if isAuthInitializing}
-  <div class="auth-loading-screen">
-    <div class="auth-loading-card">
-      <div class="auth-spinner"></div>
-      <p class="auth-loading-title">Restoring Janus Session...</p>
-    </div>
-  </div>
-{:else if !user && !bypassCloudAuth}
-  <Login onSkip={() => { bypassCloudAuth = true; }} />
-{:else}
-  <div class="janus-layout">
+<div class="janus-layout">
   <!-- Toast notification list -->
   <div class="toast-container">
     {#each toasts as toast (toast.id)}
@@ -2167,23 +2144,7 @@
         </div>
         
         <div class="settings-workspace">
-          <!-- Cinematic Intro Experience -->
-          <div class="settings-section">
-            <h3 class="section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/></svg>
-              Cinematic Experience
-            </h3>
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-subtle); margin-bottom: 20px;">
-              <div>
-                <div style="font-weight: 600; font-size: 14px;">Janus Intro Sequence (1080p)</div>
-                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Watch the unified ecosystem opening sequence</div>
-              </div>
-              <button class="btn btn-sm btn-primary" onclick={playIntro} style="display: flex; align-items: center; gap: 6px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/></svg>
-                <span>Play Intro</span>
-              </button>
-            </div>
-          </div>
+          
 
           <!-- Local Server Card -->
           <div class="settings-section">
@@ -2271,34 +2232,7 @@
     {/if}
   </main>
 
-  <!-- Cinematic Intro Video Modal -->
-  {#if showIntroModal}
-    <div class="intro-modal-overlay" onclick={closeIntro} role="dialog" aria-modal="true">
-      <div class="intro-modal-card" onclick={(e) => e.stopPropagation()}>
-        <div class="intro-video-wrapper">
-          <video 
-            src="/videos/intro.mp4" 
-            autoplay 
-            controls
-            playsinline
-            onended={closeIntro}
-            class="intro-video-element"
-          >
-            <track kind="captions" />
-          </video>
-        </div>
-        <div class="intro-controls-bar">
-          <div class="intro-info">
-            <span class="intro-title">JANUS</span>
-            <span class="intro-subtitle">Unified Ecosystem Bridge</span>
-          </div>
-          <button class="btn btn-sm btn-outline" onclick={closeIntro}>
-            <span>Skip / Close ✕</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
+  
 
   <!-- Pairing Setup Modal -->
   {#if showPairingModal}
@@ -2357,7 +2291,6 @@
   {/if}
 
   </div>
-{/if}
 
 <style>
   /* ════════════════════════════════════════════════
