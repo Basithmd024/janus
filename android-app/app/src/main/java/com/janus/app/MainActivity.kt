@@ -28,6 +28,7 @@ import androidx.compose.material3.*
 import androidx.compose.animation.core.*
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.*
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -220,12 +221,27 @@ class MainActivity : ComponentActivity() {
         bindService(intent, connection, Context.BIND_AUTO_CREATE)
 
         setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
+            val isDark = isSystemInDarkTheme()
+            val colorScheme = if (isDark) {
+                darkColorScheme(
                     primary = Color(0xFFC084FC),
                     background = Color(0xFF0F0A1C),
                     surface = Color(0xFF1E1535)
                 )
+            } else {
+                lightColorScheme(
+                    primary = Color(0xFF7C3AED),
+                    background = Color(0xFFF8F7FC),
+                    surface = Color(0xFFFFFFFF),
+                    onPrimary = Color.White,
+                    onBackground = Color(0xFF1A1625),
+                    onSurface = Color(0xFF1A1625),
+                    surfaceVariant = Color(0xFFF0EDF5),
+                    outline = Color(0xFFD4D0DC)
+                )
+            }
+            MaterialTheme(
+                colorScheme = colorScheme
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

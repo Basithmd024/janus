@@ -32,6 +32,17 @@
     source: string;
   }
 
+  // Theme Toggle State
+  let currentTheme = $state<string>(typeof localStorage !== 'undefined' ? (localStorage.getItem('janus-theme') || 'dark') : 'dark');
+
+  function toggleTheme() {
+    currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('janus-theme', currentTheme);
+    }
+    document.documentElement.setAttribute('data-theme', currentTheme);
+  }
+
   // Intro Motion & Launch Animation State
   let showIntro = $state<boolean>(true);
   let introPhase = $state<number>(0); // 0: Logo draw, 1: Text reveal, 2: HUD scan, 3: Shutter exit
@@ -717,6 +728,11 @@
   }
 
   onMount(async () => {
+    // Apply saved theme
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', currentTheme);
+    }
+
     // Start Intro Motion sequence
     setTimeout(() => { introPhase = 1; }, 400);
     setTimeout(() => { introPhase = 2; }, 1100);
@@ -1208,6 +1224,19 @@
     {/if}
 
     <!-- Navigation -->
+    <!-- Theme Toggle -->
+    <div class="theme-toggle-wrap">
+      <button class="theme-toggle-btn" onclick={toggleTheme} title="Switch to {currentTheme === 'dark' ? 'Light' : 'Dark'} Theme">
+        {#if currentTheme === 'dark'}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="1.5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <span>Light Mode</span>
+        {:else}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Dark Mode</span>
+        {/if}
+      </button>
+    </div>
+
     <nav class="sidebar-nav">
       <button class="nav-item {activeTab === 'overview' ? 'active' : ''}" onclick={() => selectTab('overview')}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -2089,9 +2118,9 @@
 
 <style>
   /* ════════════════════════════════════════════════
-     DESIGN TOKENS
+     DESIGN TOKENS — DARK THEME (Default)
      ════════════════════════════════════════════════ */
-  :root {
+  :root, :root[data-theme="dark"] {
     --bg-base: #09080f;
     --bg-surface: rgba(16, 14, 28, 0.55);
     --bg-elevated: rgba(24, 20, 42, 0.65);
@@ -2115,6 +2144,51 @@
     --shadow-card: 0 2px 12px rgba(0,0,0,0.2);
     --shadow-elevated: 0 8px 32px rgba(0,0,0,0.35);
     --transition: 0.2s ease;
+    --hover-bg: rgba(255,255,255,0.03);
+    --hover-bg-strong: rgba(255,255,255,0.06);
+    --scrollbar-track: rgba(255,255,255,0.03);
+    --scrollbar-thumb: rgba(255,255,255,0.08);
+    --card-bg: rgba(24, 20, 42, 0.65);
+    --input-bg: rgba(255,255,255,0.04);
+    --input-border: rgba(255,255,255,0.08);
+    --sidebar-bg: rgba(16, 14, 28, 0.92);
+    --hero-card-bg: linear-gradient(135deg, rgba(30, 22, 55, 0.8) 0%, rgba(20, 16, 40, 0.9) 100%);
+    --badge-bg: rgba(167, 139, 250, 0.1);
+    --meta-bg: rgba(255,255,255,0.03);
+  }
+
+  /* ════════════════════════════════════════════════
+     DESIGN TOKENS — LIGHT THEME
+     ════════════════════════════════════════════════ */
+  :root[data-theme="light"] {
+    --bg-base: #f8f7fc;
+    --bg-surface: rgba(255, 255, 255, 0.85);
+    --bg-elevated: rgba(255, 255, 255, 0.95);
+    --border-subtle: rgba(0, 0, 0, 0.08);
+    --border-accent: rgba(0, 0, 0, 0.12);
+    --text-primary: #1a1625;
+    --text-secondary: #6b6280;
+    --text-muted: #9890a8;
+    --accent: #7c3aed;
+    --accent-bright: #6d28d9;
+    --accent-dim: rgba(124, 58, 237, 0.08);
+    --success: #059669;
+    --success-dim: rgba(5, 150, 105, 0.08);
+    --error: #dc2626;
+    --error-dim: rgba(220, 38, 38, 0.06);
+    --shadow-card: 0 2px 12px rgba(0,0,0,0.06);
+    --shadow-elevated: 0 8px 32px rgba(0,0,0,0.1);
+    --hover-bg: rgba(0,0,0,0.03);
+    --hover-bg-strong: rgba(0,0,0,0.06);
+    --scrollbar-track: rgba(0,0,0,0.03);
+    --scrollbar-thumb: rgba(0,0,0,0.12);
+    --card-bg: rgba(255,255,255, 0.9);
+    --input-bg: rgba(0,0,0,0.03);
+    --input-border: rgba(0,0,0,0.1);
+    --sidebar-bg: rgba(255, 255, 255, 0.92);
+    --hero-card-bg: linear-gradient(135deg, rgba(248, 245, 255, 0.95) 0%, rgba(237, 233, 254, 0.9) 100%);
+    --badge-bg: rgba(124, 58, 237, 0.08);
+    --meta-bg: rgba(0,0,0,0.03);
   }
 
   :global(body) {
@@ -2173,7 +2247,7 @@
     gap: 0.6rem;
     padding: 0.6rem 1rem;
     border-radius: var(--radius-md);
-    background: rgba(16, 14, 28, 0.92);
+    background: var(--sidebar-bg);
     border: 1px solid var(--border-subtle);
     backdrop-filter: blur(12px);
     box-shadow: var(--shadow-elevated);
@@ -2271,7 +2345,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.3rem;
-    background: rgba(255,255,255,0.03);
+    background: var(--scrollbar-track);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
     padding: 0.35rem 0.4rem;
@@ -2307,7 +2381,7 @@
     position: relative;
     text-align: left;
   }
-  .nav-item:hover { color: var(--text-primary); background: rgba(255,255,255,0.03); }
+  .nav-item:hover { color: var(--text-primary); background: var(--hover-bg); }
   .nav-item.active {
     color: var(--accent);
     background: var(--accent-dim);
@@ -2705,7 +2779,7 @@
     width: 100%;
     aspect-ratio: 1;
     border-radius: 50%;
-    background: rgba(255,255,255,0.03);
+    background: var(--scrollbar-track);
     border: 1px solid rgba(255,255,255,0.06);
     cursor: pointer;
     color: var(--text-primary);
@@ -3901,6 +3975,140 @@
   @keyframes hintBreathe {
     0% { opacity: 0.4; transform: translateY(0); }
     100% { opacity: 0.9; transform: translateY(2px); }
+  }
+
+
+  /* ════════════════════════════════════════════════
+     THEME TOGGLE BUTTON
+     ════════════════════════════════════════════════ */
+  .theme-toggle-wrap {
+    padding: 0 0.75rem;
+    margin-bottom: 0.35rem;
+  }
+  .theme-toggle-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.55rem 0.85rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    background: var(--hover-bg, rgba(255,255,255,0.03));
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.25s ease;
+  }
+  .theme-toggle-btn:hover {
+    background: var(--hover-bg-strong, rgba(255,255,255,0.06));
+    color: var(--text-primary);
+    border-color: var(--accent);
+  }
+
+  /* ════════════════════════════════════════════════
+     LIGHT THEME — COMPONENT OVERRIDES
+     ════════════════════════════════════════════════ */
+  :global(:root[data-theme="light"]) .sidebar {
+    background: var(--sidebar-bg);
+    border-right-color: var(--border-subtle);
+    box-shadow: 2px 0 8px rgba(0,0,0,0.04);
+  }
+  :global(:root[data-theme="light"]) .overview-hero-card {
+    background: var(--hero-card-bg);
+    border-color: var(--border-subtle);
+    box-shadow: var(--shadow-card);
+  }
+  :global(:root[data-theme="light"]) .overview-card {
+    background: var(--card-bg);
+    border-color: var(--border-subtle);
+    box-shadow: var(--shadow-card);
+  }
+  :global(:root[data-theme="light"]) .device-widget {
+    background: var(--card-bg);
+    border-color: var(--border-subtle);
+  }
+  :global(:root[data-theme="light"]) .settings-section {
+    background: var(--card-bg);
+    border-color: var(--border-subtle);
+    box-shadow: var(--shadow-card);
+  }
+  :global(:root[data-theme="light"]) .detail-row {
+    border-bottom-color: var(--border-subtle);
+  }
+  :global(:root[data-theme="light"]) .toast-container .toast {
+    background: rgba(255,255,255,0.95);
+    border-color: var(--border-subtle);
+    box-shadow: var(--shadow-elevated);
+  }
+  :global(:root[data-theme="light"]) .btn-primary {
+    background: linear-gradient(135deg, var(--accent) 0%, #6d28d9 100%);
+    color: #fff;
+  }
+  :global(:root[data-theme="light"]) .btn-outline {
+    border-color: var(--border-accent);
+    color: var(--text-secondary);
+  }
+  :global(:root[data-theme="light"]) .status-pill.online {
+    background: rgba(5,150,105,0.08);
+    border-color: rgba(5,150,105,0.2);
+    color: #059669;
+  }
+  :global(:root[data-theme="light"]) .badge-type {
+    background: var(--badge-bg);
+    color: var(--accent);
+  }
+  :global(:root[data-theme="light"]) .hero-device-meta .meta-tag {
+    background: var(--meta-bg);
+    color: var(--text-secondary);
+  }
+  :global(:root[data-theme="light"]) .dw-action-btn {
+    background: var(--meta-bg);
+    border-color: var(--border-subtle);
+  }
+  :global(:root[data-theme="light"]) .dw-action-btn:hover {
+    background: var(--hover-bg-strong);
+    color: var(--text-primary);
+  }
+  :global(:root[data-theme="light"]) .empty-state {
+    color: var(--text-secondary);
+  }
+  :global(:root[data-theme="light"]) .tab-panel {
+    color: var(--text-primary);
+  }
+  :global(:root[data-theme="light"]) .sms-bubble {
+    background: var(--card-bg);
+    border-color: var(--border-subtle);
+  }
+  :global(:root[data-theme="light"]) .thread-item {
+    border-bottom-color: var(--border-subtle);
+  }
+  :global(:root[data-theme="light"]) .thread-item:hover,
+  :global(:root[data-theme="light"]) .thread-item.active {
+    background: var(--accent-dim);
+  }
+  :global(:root[data-theme="light"]) input, :global(:root[data-theme="light"]) textarea {
+    background: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--text-primary);
+  }
+  :global(:root[data-theme="light"]) .notification-card {
+    background: var(--card-bg);
+    border-color: var(--border-subtle);
+  }
+  :global(:root[data-theme="light"]) .logo-text h1 {
+    background: linear-gradient(135deg, #1a1625 30%, var(--accent) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  :global(:root[data-theme="light"]) .modal-overlay {
+    background: rgba(0,0,0,0.3);
+    backdrop-filter: blur(6px);
+  }
+  :global(:root[data-theme="light"]) .modal-card {
+    background: rgba(255,255,255,0.98);
+    border-color: var(--border-subtle);
+    box-shadow: var(--shadow-elevated);
   }
 
 </style>
