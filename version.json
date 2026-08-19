@@ -1,15 +1,16 @@
 {
-  "version": "1.0.3",
+  "version": "4.0.0",
   "min_version": "1.0.0",
   "release_date": "2026-08-20",
-  "title": "Janus Mobile Update v1.0.3 — Clean Production Build",
+  "title": "Janus Ecosystem v4.0.0 — Unified Master Release",
   "notes": [
-    "Removed complex bug report modal flows for streamlined user experience",
-    "Enhanced reference dashboard layout and performance"
+    "Merged all v2 and v3 enhancements into single unified v4.0.0 release",
+    "Default Light Mode theme across Android with reference card design & crest logo",
+    "Full macOS desktop app & Android mobile bridge integration"
   ],
   "downloads": {
-    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v1.0.3/app-debug.apk",
-    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v1.0.3/Janus.dmg",
-    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v1.0.3"
+    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v4.0.0/app-debug.apk",
+    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v4.0.0/Janus.dmg",
+    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v4.0.0"
   }
 }
