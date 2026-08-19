@@ -240,9 +240,16 @@
   // ──────────────────────────────────────────────
   let activeConnectedDevice = $derived(
     (() => {
-      // Check if any device in pairedDevicesList is currently online
+      // 1. Check if any device in pairedDevicesList is currently online
       const onlinePaired = pairedDevicesList.find((d) => d.online);
       if (onlinePaired) return onlinePaired;
+
+      // 2. Check if any discovered device is online or active
+      const onlineDiscovered = discoveredDevices.find((d) => (d as any).online || d.paired);
+      if (onlineDiscovered) return onlineDiscovered;
+
+      // 3. If any device exists in discoveredDevices, treat it as active
+      if (discoveredDevices.length > 0) return discoveredDevices[0];
 
       return null;
     })()
@@ -1054,12 +1061,18 @@
     });
     unlisteners.push(unlistenCallAudio);
 
-    const unlistenDeviceStatus = await listen<any>("device-status", (event) => {
+    const unlistenDeviceStatus = await listen<any>("device-status", async (event) => {
       const payload = event.payload;
       console.log("📡 Device telemetry received:", JSON.stringify(payload));
       deviceBattery = payload.battery_level ?? deviceBattery;
       deviceIsCharging = payload.is_charging ?? deviceIsCharging;
       deviceSignal = payload.signal_level ?? deviceSignal;
+
+      // If discoveredDevices is empty, sync from active connected devices immediately
+      if (discoveredDevices.length === 0) {
+        await loadConnectedDevices();
+        await loadPairedDevices();
+      }
     });
     unlisteners.push(unlistenDeviceStatus);
 
@@ -1185,7 +1198,7 @@
         <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
           <rect x="2" y="2" width="24" height="24" rx="7" stroke="url(#g1)" stroke-width="2"/>
           <path d="M10 8v12M14 10v8M18 8v12" stroke="url(#g1)" stroke-width="2" stroke-linecap="round"/>
-          <defs><linearGradient id="g1" x1="2" y1="2" x2="26" y2="26"><stop stop-color="#c084fc"/><stop offset="1" stop-color="#818cf8"/></linearGradient></defs>
+          <defs><linearGradient id="g1" x1="2" y1="2" x2="26" y2="26"><stop stop-color="#2563eb"/><stop offset="1" stop-color="#38bdf8"/></linearGradient></defs>
         </svg>
       </div>
       <div class="logo-text">
@@ -1638,7 +1651,7 @@
               </div>
             {:else}
               <div class="empty-state pairing-flow" style="max-width: 500px; padding: 2rem; display: flex; flex-direction: column; align-items: center; text-align: center;">
-                <div class="empty-icon" style="color: var(--accent); margin-bottom: 0.5rem;">
+                <div class="empty-icon" style="color: var(--text-primary); margin-bottom: 0.5rem;">
                   <svg width="48" height="48" viewBox="0 0 24 24" fill="none"><rect x="5" y="2" width="14" height="20" rx="3" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="18" r="1" fill="currentColor"/></svg>
                 </div>
                 <h3>Pair Your Device</h3>
@@ -1651,7 +1664,7 @@
                   </div>
                   
                   <div style="margin: 4px 0; color: rgba(255,255,255,0.4); font-size: 11px; font-weight: bold; letter-spacing: 1px;">— OR ENTER PIN MANUALLY —</div>
-                  <div class="pin-display" style="letter-spacing: 4px; font-size: 32px; font-weight: bold; background: rgba(255,255,255,0.05); padding: 8px 24px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); color: var(--accent); margin: 0;">{pairingPin}</div>
+                  <div class="pin-display" style="letter-spacing: 4px; font-size: 32px; font-weight: bold; background: rgba(255,255,255,0.05); padding: 8px 24px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary); margin: 0;">{pairingPin}</div>
                 </div>
                 
                 <p class="hint-text" style="font-size: 0.8rem; color: var(--text-muted);">Make sure both your Mac and phone are on the same local Wi-Fi network.</p>
@@ -2114,7 +2127,7 @@
             <canvas use:qrAction={200} bind:this={qrCanvas} style="width: 200px; height: 200px; display: block;"></canvas>
           </div>
           <div style="margin: 4px 0; color: rgba(255,255,255,0.4); font-size: 11px; font-weight: bold; letter-spacing: 1px;">— OR ENTER PIN MANUALLY —</div>
-          <div class="pin-display" style="letter-spacing: 4px; font-size: 32px; font-weight: bold; background: rgba(255,255,255,0.05); padding: 8px 24px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); color: var(--accent);">{pairingPin}</div>
+          <div class="pin-display" style="letter-spacing: 4px; font-size: 32px; font-weight: bold; background: rgba(255,255,255,0.05); padding: 8px 24px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary);">{pairingPin}</div>
           <p class="hint-text">Make sure both devices are on the same local Wi-Fi network.</p>
         </div>
       </div>
@@ -2159,20 +2172,20 @@
 
 <style>
   /* ════════════════════════════════════════════════
-     DESIGN TOKENS — LIGHT THEME (Default)
+     DESIGN TOKENS — LIGHT THEME (Default, Crisp Slate & Blue)
      ════════════════════════════════════════════════ */
   :root, :root[data-theme="light"] {
-    --bg-base: #f8f7fc;
-    --bg-surface: rgba(255, 255, 255, 0.85);
-    --bg-elevated: rgba(255, 255, 255, 0.95);
-    --border-subtle: rgba(0, 0, 0, 0.08);
-    --border-accent: rgba(0, 0, 0, 0.12);
-    --text-primary: #1a1625;
-    --text-secondary: #6b6280;
-    --text-muted: #9890a8;
-    --accent: #7c3aed;
-    --accent-bright: #6d28d9;
-    --accent-dim: rgba(124, 58, 237, 0.08);
+    --bg-base: #f8fafc;
+    --bg-surface: #ffffff;
+    --bg-elevated: #ffffff;
+    --border-subtle: #e2e8f0;
+    --border-accent: #cbd5e1;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
+    --accent: #2563eb;
+    --accent-bright: #1d4ed8;
+    --accent-dim: rgba(37, 99, 235, 0.08);
     --success: #059669;
     --success-dim: rgba(5, 150, 105, 0.08);
     --error: #dc2626;
@@ -2182,54 +2195,54 @@
     --radius-lg: 16px;
     --radius-xl: 20px;
     --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --shadow-card: 0 2px 12px rgba(0,0,0,0.06);
-    --shadow-elevated: 0 8px 32px rgba(0,0,0,0.1);
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
+    --shadow-elevated: 0 10px 25px -5px rgba(0,0,0,0.08), 0 8px 10px -6px rgba(0,0,0,0.04);
     --transition: 0.2s ease;
-    --hover-bg: rgba(0,0,0,0.03);
-    --hover-bg-strong: rgba(0,0,0,0.06);
-    --scrollbar-track: rgba(0,0,0,0.03);
-    --scrollbar-thumb: rgba(0,0,0,0.12);
-    --card-bg: rgba(255,255,255, 0.9);
-    --input-bg: rgba(0,0,0,0.03);
-    --input-border: rgba(0,0,0,0.1);
-    --sidebar-bg: rgba(255, 255, 255, 0.94);
-    --hero-card-bg: linear-gradient(135deg, rgba(248, 245, 255, 0.95) 0%, rgba(237, 233, 254, 0.9) 100%);
-    --badge-bg: rgba(124, 58, 237, 0.08);
-    --meta-bg: rgba(0,0,0,0.03);
+    --hover-bg: #f1f5f9;
+    --hover-bg-strong: #e2e8f0;
+    --scrollbar-track: #f1f5f9;
+    --scrollbar-thumb: #cbd5e1;
+    --card-bg: #ffffff;
+    --input-bg: #f8fafc;
+    --input-border: #cbd5e1;
+    --sidebar-bg: #ffffff;
+    --hero-card-bg: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    --badge-bg: #f1f5f9;
+    --meta-bg: #f1f5f9;
   }
 
   /* ════════════════════════════════════════════════
      DESIGN TOKENS — TRUE DEEP BLACK (Dark Theme)
      ════════════════════════════════════════════════ */
   :root[data-theme="dark"] {
-    --bg-base: #050508;
-    --bg-surface: rgba(12, 12, 16, 0.75);
-    --bg-elevated: rgba(18, 18, 24, 0.85);
-    --border-subtle: rgba(255, 255, 255, 0.08);
-    --border-accent: rgba(255, 255, 255, 0.14);
+    --bg-base: #09090b;
+    --bg-surface: #18181b;
+    --bg-elevated: #27272a;
+    --border-subtle: #27272a;
+    --border-accent: #3f3f46;
     --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
     --text-muted: #64748b;
-    --accent: #818cf8;
-    --accent-bright: #a5b4fc;
-    --accent-dim: rgba(129, 140, 248, 0.14);
-    --success: #34d399;
-    --success-dim: rgba(52, 211, 153, 0.14);
-    --error: #f87171;
-    --error-dim: rgba(248, 113, 113, 0.12);
-    --shadow-card: 0 4px 20px rgba(0,0,0,0.6);
+    --accent: #3b82f6;
+    --accent-bright: #60a5fa;
+    --accent-dim: rgba(59, 130, 246, 0.15);
+    --success: #10b981;
+    --success-dim: rgba(16, 185, 129, 0.15);
+    --error: #ef4444;
+    --error-dim: rgba(239, 68, 68, 0.12);
+    --shadow-card: 0 4px 20px rgba(0,0,0,0.5);
     --shadow-elevated: 0 12px 40px rgba(0,0,0,0.8);
-    --hover-bg: rgba(255,255,255,0.04);
+    --hover-bg: rgba(255,255,255,0.05);
     --hover-bg-strong: rgba(255,255,255,0.08);
-    --scrollbar-track: rgba(255,255,255,0.02);
-    --scrollbar-thumb: rgba(255,255,255,0.12);
-    --card-bg: rgba(14, 14, 20, 0.85);
-    --input-bg: rgba(255,255,255,0.05);
-    --input-border: rgba(255,255,255,0.1);
-    --sidebar-bg: rgba(8, 8, 12, 0.95);
-    --hero-card-bg: linear-gradient(135deg, rgba(20, 20, 30, 0.95) 0%, rgba(10, 10, 16, 0.95) 100%);
-    --badge-bg: rgba(129, 140, 248, 0.12);
-    --meta-bg: rgba(255,255,255,0.04);
+    --scrollbar-track: #18181b;
+    --scrollbar-thumb: #3f3f46;
+    --card-bg: #18181b;
+    --input-bg: #27272a;
+    --input-border: #3f3f46;
+    --sidebar-bg: #121215;
+    --hero-card-bg: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    --badge-bg: rgba(255, 255, 255, 0.06);
+    --meta-bg: rgba(255,255,255,0.05);
   }
 
   :global(body) {
@@ -2349,7 +2362,7 @@
     border-radius: 20px;
     background: var(--accent-dim);
     border: 1px solid rgba(167, 139, 250, 0.2);
-    color: var(--accent);
+    color: var(--text-primary);
     font-weight: 600;
     letter-spacing: 0.3px;
   }
@@ -2424,7 +2437,7 @@
   }
   .nav-item:hover { color: var(--text-primary); background: var(--hover-bg); }
   .nav-item.active {
-    color: var(--accent);
+    color: var(--text-primary);
     background: var(--accent-dim);
   }
   .nav-item.active::before {
@@ -2548,7 +2561,7 @@
     text-align: center;
     gap: 0.75rem;
   }
-  .empty-icon { color: var(--accent); opacity: 0.5; margin-bottom: 0.25rem; }
+  .empty-icon { color: var(--text-primary); opacity: 0.5; margin-bottom: 0.25rem; }
   .empty-state h3 { margin: 0; font-size: 1.1rem; color: var(--text-primary); font-weight: 700; }
   .empty-state p { margin: 0; font-size: 0.85rem; max-width: 320px; line-height: 1.5; }
 
@@ -2724,7 +2737,7 @@
     font-family: var(--font);
     transition: border-color var(--transition);
   }
-  .reply-row input:focus { border-color: var(--accent); }
+  .reply-row input:focus { border-color: var(--text-primary); }
 
   /* ════════════════════════════════════════════════
      FILES / DROPZONES
@@ -2752,12 +2765,12 @@
   }
   .dropzone:hover { border-color: rgba(255,255,255,0.1); }
   .dropzone.drag-active {
-    border-color: var(--accent);
+    border-color: var(--text-primary);
     background: var(--accent-dim);
     transform: scale(1.01);
     box-shadow: 0 0 30px rgba(167,139,250,0.08);
   }
-  .dropzone-icon { color: var(--accent); opacity: 0.6; margin-bottom: 0.25rem; }
+  .dropzone-icon { color: var(--text-primary); opacity: 0.6; margin-bottom: 0.25rem; }
   .dropzone h3 { margin: 0; font-size: 1.05rem; }
   .dropzone p { margin: 0; font-size: 0.82rem; color: var(--text-secondary); }
 
@@ -2772,7 +2785,7 @@
   }
   .transfer-info { display: flex; justify-content: space-between; margin-bottom: 0.4rem; }
   .transfer-name { font-size: 0.82rem; font-weight: 600; }
-  .transfer-pct { font-size: 0.78rem; color: var(--accent); font-weight: 700; }
+  .transfer-pct { font-size: 0.78rem; color: var(--text-primary); font-weight: 700; }
   .progress-track { height: 4px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; }
   .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #818cf8); border-radius: 2px; transition: width 0.3s ease; }
   .transfer-bytes { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.3rem; display: block; }
@@ -2805,7 +2818,7 @@
     font-family: var(--font);
     transition: border-color var(--transition);
   }
-  .dialer-input:focus { border-color: var(--accent); }
+  .dialer-input:focus { border-color: var(--text-primary); }
 
   .dial-grid {
     display: grid;
@@ -2827,7 +2840,7 @@
     transition: all var(--transition);
     padding: 0;
   }
-  .dial-btn:hover { background: rgba(255,255,255,0.07); border-color: var(--accent); }
+  .dial-btn:hover { background: rgba(255,255,255,0.07); border-color: var(--text-primary); }
   .dial-num { font-size: 1.2rem; font-weight: 700; line-height: 1; }
   .dial-sub { font-size: 0.5rem; font-weight: 600; color: var(--text-muted); letter-spacing: 1.5px; margin-top: 2px; }
 
@@ -2878,7 +2891,7 @@
   .detail-row { display: flex; font-size: 0.82rem; }
   .detail-label { color: var(--text-muted); width: 120px; flex-shrink: 0; }
   .detail-value { word-break: break-all; color: var(--text-secondary); }
-  .detail-value.mono { font-family: "SF Mono", "Fira Code", monospace; color: var(--accent); font-size: 0.75rem; }
+  .detail-value.mono { font-family: "SF Mono", "Fira Code", monospace; color: var(--text-primary); font-size: 0.75rem; }
 
   .device-list { display: flex; flex-direction: column; gap: 0.5rem; }
   .device-row {
@@ -2934,7 +2947,7 @@
   .pin-display {
     font-size: 2.2rem;
     font-weight: 800;
-    color: var(--accent);
+    color: var(--text-primary);
     background: rgba(0,0,0,0.35);
     padding: 0.6rem;
     border-radius: var(--radius-md);
@@ -2957,7 +2970,7 @@
     align-items: center;
     justify-content: center;
     margin: 0 auto 1rem auto;
-    color: var(--accent);
+    color: var(--text-primary);
   }
   .call-card h2 { font-size: 1.1rem; margin: 0 0 0.5rem 0; }
   .call-details { display: flex; flex-direction: column; gap: 0.2rem; margin-bottom: 1.5rem; }
@@ -3147,7 +3160,7 @@
   }
   .call-back-btn:hover {
     opacity: 1;
-    color: var(--accent);
+    color: var(--text-primary);
   }
 
   /* SMS Workspace Layout */
@@ -3191,7 +3204,7 @@
   }
   .thread-item.active {
     background: var(--accent-dim);
-    border-color: var(--accent);
+    border-color: var(--text-primary);
   }
   .thread-item-header {
     display: flex;
@@ -3386,7 +3399,7 @@
   .status-pill.offline {
     background: rgba(167, 139, 250, 0.1);
     border: 1px solid rgba(167, 139, 250, 0.2);
-    color: var(--accent);
+    color: var(--text-primary);
   }
   .overview-hero-card {
     display: flex;
@@ -3413,7 +3426,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--accent);
+    color: var(--text-primary);
   }
   .hero-device-details {
     display: flex;
@@ -3437,7 +3450,7 @@
     background: rgba(167, 139, 250, 0.15);
     border: 1px solid rgba(167, 139, 250, 0.3);
     border-radius: 12px;
-    color: var(--accent);
+    color: var(--text-primary);
     font-weight: 700;
     letter-spacing: 0.5px;
   }
@@ -3487,7 +3500,7 @@
   }
   .signal-tag {
     font-size: 0.7rem;
-    color: var(--accent);
+    color: var(--text-primary);
     font-weight: 600;
     background: rgba(167, 139, 250, 0.1);
     padding: 0.1rem 0.35rem;
@@ -3610,7 +3623,7 @@
   }
   .clip-source {
     font-size: 0.65rem;
-    color: var(--accent);
+    color: var(--text-primary);
   }
   .overview-dropzone {
     border: 1px dashed var(--border-subtle);
@@ -3626,9 +3639,9 @@
     transition: all var(--transition);
   }
   .overview-dropzone.drag-over {
-    border-color: var(--accent);
+    border-color: var(--text-primary);
     background: var(--accent-dim);
-    color: var(--accent);
+    color: var(--text-primary);
   }
   .overview-notif-list {
     display: flex;
@@ -3650,7 +3663,7 @@
     padding: 0.35rem 0.5rem;
     border-radius: 4px;
   }
-  .mini-notif-app { font-weight: 700; font-size: 0.68rem; color: var(--accent); }
+  .mini-notif-app { font-weight: 700; font-size: 0.68rem; color: var(--text-primary); }
   .mini-notif-title { color: var(--text-primary); }
   .card-actions-bottom {
     display: flex;
@@ -3686,7 +3699,7 @@
     width: 54px;
     height: 54px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #a78bfa, #7c3aed);
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3736,7 +3749,7 @@
     font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 1px;
-    color: var(--accent);
+    color: var(--text-primary);
   }
   .qr-canvas-wrapper {
     background: #ffffff;
@@ -3753,7 +3766,7 @@
     font-size: 2.2rem;
     font-weight: 800;
     letter-spacing: 6px;
-    color: var(--accent);
+    color: var(--text-primary);
     background: rgba(167, 139, 250, 0.08);
     border: 1px solid rgba(167, 139, 250, 0.25);
     padding: 0.75rem 1.5rem;
@@ -3782,7 +3795,7 @@
     border-radius: 50%;
     background: var(--accent-dim);
     border: 1px solid rgba(167, 139, 250, 0.3);
-    color: var(--accent);
+    color: var(--text-primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -4044,7 +4057,7 @@
   .theme-toggle-btn:hover {
     background: var(--hover-bg-strong, rgba(255,255,255,0.06));
     color: var(--text-primary);
-    border-color: var(--accent);
+    border-color: var(--text-primary);
   }
 
   /* ════════════════════════════════════════════════
@@ -4097,7 +4110,7 @@
   }
   :global(:root[data-theme="light"]) .badge-type {
     background: var(--badge-bg);
-    color: var(--accent);
+    color: var(--text-primary);
   }
   :global(:root[data-theme="light"]) .hero-device-meta .meta-tag {
     background: var(--meta-bg);
