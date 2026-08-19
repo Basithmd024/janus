@@ -874,17 +874,17 @@ pub fn run() {
 
             // Create native macOS Menu Bar Status Item (Tray Icon) with Quick Experience Controls
             if let (Ok(status_item), Ok(sep1), Ok(send_file_item), Ok(clip_item), Ok(mirror_item), Ok(downloads_item), Ok(sep2), Ok(update_item), Ok(show_item), Ok(sep3), Ok(quit_item)) = (
-                MenuItemBuilder::with_id("status", "📱 Janus: Real-Time Bridge Active").enabled(false).build(app),
+                MenuItemBuilder::with_id("status", "Janus: Real-Time Bridge Active").enabled(false).build(app),
                 PredefinedMenuItem::separator(app),
-                MenuItemBuilder::with_id("send_file", "📁 Quick Send Files to Mobile...").build(app),
-                MenuItemBuilder::with_id("clipboard_sync", "📋 Sync Clipboard Now").build(app),
-                MenuItemBuilder::with_id("mirror", "📲 Start Screen Mirroring").build(app),
-                MenuItemBuilder::with_id("open_downloads", "📂 Open Received Files Folder").build(app),
+                MenuItemBuilder::with_id("send_file", "Send Files to Mobile...").build(app),
+                MenuItemBuilder::with_id("clipboard_sync", "Sync Clipboard Now").build(app),
+                MenuItemBuilder::with_id("mirror", "Start Screen Mirroring").build(app),
+                MenuItemBuilder::with_id("open_downloads", "Open Received Files Folder").build(app),
                 PredefinedMenuItem::separator(app),
-                MenuItemBuilder::with_id("check_update", "✨ Check for Updates...").build(app),
-                MenuItemBuilder::with_id("show", "🌐 Open Janus Dashboard").build(app),
+                MenuItemBuilder::with_id("check_update", "Check for Updates...").build(app),
+                MenuItemBuilder::with_id("show", "Open Dashboard").build(app),
                 PredefinedMenuItem::separator(app),
-                MenuItemBuilder::with_id("quit", "⏻ Quit Janus").build(app),
+                MenuItemBuilder::with_id("quit", "Quit Janus").build(app),
             ) {
                 if let Ok(tray_menu) = MenuBuilder::new(app)
                     .item(&status_item)

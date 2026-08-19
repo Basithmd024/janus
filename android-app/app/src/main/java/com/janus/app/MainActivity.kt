@@ -498,7 +498,7 @@ class MainActivity : ComponentActivity() {
                     actions = {
                         IconButton(onClick = onToggleTheme) {
                             Text(
-                                text = if (isDark) "☀️" else "🌙",
+                                text = if (isDark) "Light" else "Dark",
                                 fontSize = 18.sp
                             )
                         }
@@ -550,7 +550,7 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text("✨", fontSize = 20.sp)
+                                        Icon(Icons.Default.Info, contentDescription = "Update Available", tint = MaterialTheme.colorScheme.primary)
                                         Column {
                                             Text("Update Available: Janus v${updateInfoState?.latestVersion}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                                             Text("New stability enhancements are ready!", fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
@@ -564,7 +564,7 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.align(Alignment.End),
                                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                                     ) {
-                                        Text("⬇️ Download & Update APK")
+                                        Text("Download & Update APK")
                                     }
                                 }
                             }
@@ -603,7 +603,7 @@ class MainActivity : ComponentActivity() {
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Text(
-                                            text = if (isOutgoingTransfer.value) "🚀 Sending file..." else "📥 Receiving file...",
+                                            text = if (isOutgoingTransfer.value) "Sending file..." else "Receiving file...",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 15.sp,
                                             color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -894,7 +894,7 @@ class MainActivity : ComponentActivity() {
                                         fontSize = 13.sp
                                     )
                                     Text(
-                                        "🟢 TLS WebSocket Mesh Active • Real-time Telemetry & Clipboard Synced",
+                                        "TLS WebSocket Mesh Active • Real-time Telemetry & Clipboard Synced",
                                         color = Color(0xFF34D399),
                                         fontSize = 12.sp
                                     )
@@ -1017,7 +1017,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                         
                                         if (isCurrentConnection) {
-                                            Text("🟢 Connected", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 8.dp), fontSize = 14.sp)
+                                            Text("Connected", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 8.dp), fontSize = 14.sp)
                                         } else {
                                             Button(
                                                 onClick = { janusService?.connectionManager?.connectToDevice(hostIp, port, fingerprint) },
@@ -1046,7 +1046,7 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Text("Software Updates", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
                                     Text(
-                                        text = if (updateInfoState?.isUpdateAvailable == true) "🚀 v${updateInfoState?.latestVersion} Available" else "✅ Up to date",
+                                        text = if (updateInfoState?.isUpdateAvailable == true) "v${updateInfoState?.latestVersion} Available" else "Up to date",
                                         color = if (updateInfoState?.isUpdateAvailable == true) MaterialTheme.colorScheme.primary else Color(0xFF10B981),
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 13.sp
@@ -1109,14 +1109,14 @@ class MainActivity : ComponentActivity() {
                                                         ),
                                                         apkUrl = "https://github.com/Basithmd024/janus/releases/download/v1.0.0/app-debug.apk"
                                                     )
-                                                    Toast.makeText(context, "🧪 Demo Update Triggered! Check Dashboard tab.", Toast.LENGTH_LONG).show()
+                                                    Toast.makeText(context, "Demo Update Triggered. Check Dashboard tab.", Toast.LENGTH_LONG).show()
                                                 }
                                             },
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = if (updateInfoState?.isUpdateAvailable == true) Color(0xFF64748B) else Color(0xFF8B5CF6)
                                             )
                                         ) {
-                                            Text(if (updateInfoState?.isUpdateAvailable == true) "🔄 Reset Demo" else "🧪 Test Update Demo", fontSize = 12.sp)
+                                            Text(if (updateInfoState?.isUpdateAvailable == true) "Reset Demo" else "Test Update Demo", fontSize = 12.sp)
                                         }
                                     }
 
@@ -1129,7 +1129,7 @@ class MainActivity : ComponentActivity() {
                                             },
                                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                                         ) {
-                                            Text("⬇️ Download & Install Update APK", fontWeight = FontWeight.Bold)
+                                            Text("Download & Install Update APK", fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }

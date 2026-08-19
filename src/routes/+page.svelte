@@ -233,7 +233,7 @@
       }
       if (info && info.update_available) {
         showUpdateModal = true;
-        showToast(`🚀 New update v${info.latest_version} is available!`, "info");
+        showToast(`New update v${info.latest_version} is available!`, "info");
       } else if (manual) {
         showToast(`Janus is up to date! (v${info?.current_version || "1.0.0"})`, "success");
       }
@@ -273,7 +273,7 @@
       await invoke("download_and_open_update", {
         downloadUrl: updateInfo.download_url
       });
-      showToast("🎉 Update downloaded! The installer is ready on your screen.", "success");
+      showToast("Update downloaded. The installer is ready on your screen.", "success");
       showUpdateModal = false;
     } catch (e) {
       showToast("Update download failed: " + e, "error");
@@ -661,7 +661,7 @@
         activeFileTransfer.progress = 100;
         activeFileTransfer.status = 'completed';
       }
-      showToast(`🎉 ${filename} sent successfully to ${targetDev.name}!`, "success");
+      showToast(`${filename} sent successfully to ${targetDev.name}!`, "success");
 
       setTimeout(() => {
         if (activeFileTransfer?.status === 'completed') {
@@ -1652,7 +1652,7 @@
         {#if updateInfo?.update_available}
           <div class="update-hero-banner">
             <div class="update-banner-left">
-              <span class="update-sparkle-icon">✨</span>
+              
               <div>
                 <strong>Janus Update v{updateInfo.latest_version} is available!</strong>
                 <p>New features and stability enhancements are ready for installation.</p>
@@ -2366,9 +2366,9 @@
                 <span class="detail-label">Update Status</span>
                 <span class="detail-value">
                   {#if updateInfo?.update_available}
-                    <span class="badge-update">🚀 v{updateInfo.latest_version} Available</span>
+                    <span class="badge-update">v{updateInfo.latest_version} Available</span>
                   {:else}
-                    <span class="badge-latest">✅ Up to date</span>
+                    <span class="badge-latest">Up to date</span>
                   {/if}
                 </span>
               </div>
@@ -5145,7 +5145,7 @@
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick={() => showUpdateModal = false} disabled={isDownloadingUpdate}>Later</button>
         <button class="btn btn-primary" onclick={startUpdateDownload} disabled={isDownloadingUpdate}>
-          {isDownloadingUpdate ? `Downloading (${updateProgress}%)...` : "⬇️ Download & Install DMG"}
+          {isDownloadingUpdate ? `Downloading (${updateProgress}%)...` : "Download & Install DMG"}
         </button>
       </div>
     </div>
