@@ -862,57 +862,6 @@ class MainActivity : ComponentActivity() {
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Software Updates Card
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text("Software Updates", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Current Version:", color = Color.Gray, fontSize = 14.sp)
-                                    Text("v${updateInfoState?.currentVersion ?: "1.0.0"}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Status:", color = Color.Gray, fontSize = 14.sp)
-                                    Text(
-                                        text = if (updateInfoState?.isUpdateAvailable == true) "🚀 v${updateInfoState?.latestVersion} Available" else "✅ Up to date",
-                                        color = if (updateInfoState?.isUpdateAvailable == true) MaterialTheme.colorScheme.primary else Color(0xFF10B981),
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 14.sp
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                                    if (updateInfoState?.isUpdateAvailable == true) {
-                                        Button(
-                                            onClick = {
-                                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(updateInfoState?.apkUrl ?: "https://github.com/Basithmd024/janus/releases/latest"))
-                                                context.startActivity(intent)
-                                            },
-                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                                        ) {
-                                            Text("⬇️ Update APK")
-                                        }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                    }
-                                    OutlinedButton(
-                                        onClick = {
-                                            coroutineScope.launch {
-                                                isCheckingUpdate = true
-                                                updateInfoState = checkMobileAppUpdate()
-                                                isCheckingUpdate = false
-                                                Toast.makeText(context, if (updateInfoState?.isUpdateAvailable == true) "New version v${updateInfoState?.latestVersion} available!" else "Janus is up to date! (v1.0.0)", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    ) {
-                                        Text(if (isCheckingUpdate) "Checking..." else "Check for Updates")
-                                    }
-                                }
-                            }
-                        }
                         if (isConnectedState.value) {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1077,6 +1026,110 @@ class MainActivity : ComponentActivity() {
                                             ) {
                                                 Text("⚡ Connect", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Software Updates Card placed at the BOTTOM of the screen
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Software Updates", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        text = if (updateInfoState?.isUpdateAvailable == true) "🚀 v${updateInfoState?.latestVersion} Available" else "✅ Up to date",
+                                        color = if (updateInfoState?.isUpdateAvailable == true) MaterialTheme.colorScheme.primary else Color(0xFF10B981),
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Installed Version:", color = Color.Gray, fontSize = 13.sp)
+                                    Text("v${updateInfoState?.currentVersion ?: "1.0.0"}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Channel:", color = Color.Gray, fontSize = 13.sp)
+                                    Text("GitHub Stable (CDN)", fontSize = 13.sp, color = Color.LightGray)
+                                }
+                                Spacer(modifier = Modifier.height(14.dp))
+                                
+                                // Action buttons including Demo Test button
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            modifier = Modifier.weight(1f),
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    isCheckingUpdate = true
+                                                    updateInfoState = checkMobileAppUpdate()
+                                                    isCheckingUpdate = false
+                                                    Toast.makeText(context, if (updateInfoState?.isUpdateAvailable == true) "Update found: v${updateInfoState?.latestVersion}!" else "Janus is up to date! (v1.0.0)", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        ) {
+                                            Text(if (isCheckingUpdate) "Checking..." else "Check Updates", fontSize = 12.sp)
+                                        }
+                                        
+                                        // Demo Testing Button for User
+                                        Button(
+                                            modifier = Modifier.weight(1.2f),
+                                            onClick = {
+                                                if (updateInfoState?.isUpdateAvailable == true) {
+                                                    // Reset back to normal
+                                                    updateInfoState = AppUpdateInfo(currentVersion = "1.0.0", latestVersion = "1.0.0", isUpdateAvailable = false)
+                                                    Toast.makeText(context, "Reset to normal version status", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    // Trigger simulated Demo Update Prompt!
+                                                    updateInfoState = AppUpdateInfo(
+                                                        currentVersion = "1.0.0",
+                                                        latestVersion = "1.1.0",
+                                                        isUpdateAvailable = true,
+                                                        releaseNotes = listOf(
+                                                            "⚡ Fast-path auto-connect (<400ms)",
+                                                            "🍏 Native macOS Menu Bar quick-actions",
+                                                            "📁 Instant drag-and-drop file streaming",
+                                                            "🛡️ WebSocket ping-pong keepalive"
+                                                        ),
+                                                        apkUrl = "https://github.com/Basithmd024/janus/releases/download/v1.0.0/app-debug.apk"
+                                                    )
+                                                    Toast.makeText(context, "🧪 Demo Update Triggered! Check Dashboard tab.", Toast.LENGTH_LONG).show()
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (updateInfoState?.isUpdateAvailable == true) Color(0xFF64748B) else Color(0xFF8B5CF6)
+                                            )
+                                        ) {
+                                            Text(if (updateInfoState?.isUpdateAvailable == true) "🔄 Reset Demo" else "🧪 Test Update Demo", fontSize = 12.sp)
+                                        }
+                                    }
+
+                                    if (updateInfoState?.isUpdateAvailable == true) {
+                                        Button(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            onClick = {
+                                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(updateInfoState?.apkUrl ?: "https://github.com/Basithmd024/janus/releases/latest"))
+                                                context.startActivity(intent)
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                        ) {
+                                            Text("⬇️ Download & Install Update APK", fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }
