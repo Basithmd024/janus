@@ -45,12 +45,46 @@ class ConnectionManager(
     private var reconnectRunnable: Runnable? = null
     private var reconnectAttempts = 0
 
-    fun savePairedDevice(fingerprint: String) {
+    fun savePairedDevice(fingerprint: String, ip: String? = null, port: Int? = null) {
         val prefs = context.getSharedPreferences("janus_prefs", Context.MODE_PRIVATE)
         val pairedDevices = prefs.getStringSet("paired_devices", null) ?: emptySet()
         val newSet = pairedDevices.toMutableSet()
         newSet.add(fingerprint)
-        prefs.edit().putStringSet("paired_devices", newSet).apply()
+        val editor = prefs.edit().putStringSet("paired_devices", newSet)
+        val targetIp = ip ?: connectedIp
+        val targetPort = port ?: connectedPort ?: 53317
+        if (!targetIp.isNullOrEmpty()) {
+            editor.putString("host_ip_$fingerprint", targetIp)
+            editor.putInt("host_port_$fingerprint", targetPort)
+        }
+        editor.apply()
+        Log.d("JanusConnection", "💾 Saved paired host $fingerprint with fast-connect IP $targetIp:$targetPort")
+    }
+
+    fun getSavedHostIp(fingerprint: String): String? {
+        val prefs = context.getSharedPreferences("janus_prefs", Context.MODE_PRIVATE)
+        return prefs.getString("host_ip_$fingerprint", null)
+    }
+
+    fun getSavedHostPort(fingerprint: String): Int {
+        val prefs = context.getSharedPreferences("janus_prefs", Context.MODE_PRIVATE)
+        return prefs.getInt("host_port_$fingerprint", 53317)
+    }
+
+    fun autoConnectToSavedHosts() {
+        if (isConnected || isConnecting || isAutoConnectPaused) return
+        val paired = getPairedDevices()
+        if (paired.isEmpty()) return
+
+        for (fp in paired) {
+            val ip = getSavedHostIp(fp) ?: connectedIp
+            val port = getSavedHostPort(fp)
+            if (!ip.isNullOrEmpty()) {
+                Log.d("JanusConnection", "⚡ Fast-path Auto-connecting to saved paired host $fp at $ip:$port")
+                connectToDevice(ip, port, expectedFingerprint = fp)
+                return
+            }
+        }
     }
 
     fun removePairedDevice(fingerprint: String) {
@@ -182,7 +216,7 @@ class ConnectionManager(
                     if (packet.type == "registration.success" || packet.type == "pairing.response") {
                         val serverFingerprint = packet.payload?.get("fingerprint")?.asString
                         if (serverFingerprint != null) {
-                            savePairedDevice(serverFingerprint)
+                            savePairedDevice(serverFingerprint, connectedIp, connectedPort ?: 53317)
                         }
                         this@ConnectionManager.isAutoConnectPaused = false
                         onPairingResult?.invoke(true, null)

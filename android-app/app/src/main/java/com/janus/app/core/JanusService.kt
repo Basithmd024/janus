@@ -295,6 +295,25 @@ class JanusService : Service() {
             // Start advertising our existence so Mac can see us
             discoveryManager?.startAdvertising(Build.MODEL, 53318, identity.fingerprint)
             discoveryManager?.startBrowsing()
+
+            // ⚡ Instant Fast-path Auto-connect to saved hosts
+            connectionManager?.autoConnectToSavedHosts()
+
+            // Register network change listener for zero-interaction auto-connect on Wi-Fi/Hotspot attach
+            try {
+                val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+                val networkRequest = android.net.NetworkRequest.Builder()
+                    .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build()
+                cm?.registerNetworkCallback(networkRequest, object : android.net.ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: android.net.Network) {
+                        Log.d("JanusService", "🌐 Network available — triggering background auto-connect")
+                        connectionManager?.autoConnectToSavedHosts()
+                    }
+                })
+            } catch (e: Exception) {
+                Log.w("JanusService", "Could not register network callback", e)
+            }
         }
         return START_STICKY
     }
