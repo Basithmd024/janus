@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, State};
+use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
+use tauri::tray::TrayIconBuilder;
 use std::collections::HashMap;
 
 mod protocol;
@@ -702,6 +704,48 @@ pub fn run() {
 
             // Manage global state
             app.manage(state);
+
+            // Create native macOS Menu Bar Status Item (Tray Icon)
+            if let (Ok(status_item), Ok(sep1), Ok(show_item), Ok(sep2), Ok(quit_item)) = (
+                MenuItemBuilder::with_id("status", "📱 Janus: Ecosystem Bridge Active").enabled(false).build(app),
+                PredefinedMenuItem::separator(app),
+                MenuItemBuilder::with_id("show", "Open Dashboard").build(app),
+                PredefinedMenuItem::separator(app),
+                MenuItemBuilder::with_id("quit", "Quit Janus").build(app),
+            ) {
+                if let Ok(tray_menu) = MenuBuilder::new(app)
+                    .item(&status_item)
+                    .item(&sep1)
+                    .item(&show_item)
+                    .item(&sep2)
+                    .item(&quit_item)
+                    .build()
+                {
+                    if let Some(icon) = app.default_window_icon() {
+                        let _ = TrayIconBuilder::with_id("main_tray")
+                            .icon(icon.clone())
+                            .menu(&tray_menu)
+                            .show_menu_on_left_click(true)
+                            .tooltip("Janus Ecosystem Bridge")
+                            .on_menu_event(|app, event| {
+                                match event.id.as_ref() {
+                                    "show" => {
+                                        if let Some(window) = app.get_webview_window("main") {
+                                            let _ = window.show();
+                                            let _ = window.unminimize();
+                                            let _ = window.set_focus();
+                                        }
+                                    }
+                                    "quit" => {
+                                        app.exit(0);
+                                    }
+                                    _ => {}
+                                }
+                            })
+                            .build(app);
+                    }
+                }
+            }
 
             Ok(())
         })

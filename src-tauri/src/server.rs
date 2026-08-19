@@ -383,6 +383,11 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
         }
         "device.status" => {
             println!("📡 Received device telemetry: {}", packet.payload);
+            if let Some(tray) = state.app_handle.tray_by_id("main_tray") {
+                let battery = packet.payload.get("battery_level").and_then(|v| v.as_i64()).unwrap_or(0);
+                let charging_symbol = if packet.payload.get("is_charging").and_then(|v| v.as_bool()).unwrap_or(false) { "⚡" } else { "🔋" };
+                let _ = tray.set_tooltip(Some(format!("Janus: Phone Connected ({}% {})", battery, charging_symbol)));
+            }
             {
                 let mut t = state.last_telemetry.lock().unwrap();
                 if let Some(existing) = t.as_mut() {
