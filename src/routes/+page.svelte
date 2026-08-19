@@ -1,13 +1,13 @@
 <script lang="ts">
-  import OnboardingModal from "../lib/components/OnboardingModal.svelte";
-    import MyProfileCard from "../lib/components/MyProfileCard.svelte";
+  import OnboardingModal from "$lib/components/OnboardingModal.svelte";
+    import MyProfileCard from "$lib/components/MyProfileCard.svelte";
   import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { open } from "@tauri-apps/plugin-dialog";
   import QRCode from "qrcode";
-  import Login from "../lib/components/Login.svelte";
-  import { auth, db, startCloudSync, stopCloudSync } from "../lib/firebase";
+  import Login from "$lib/components/Login.svelte";
+  import { auth, db, startCloudSync, stopCloudSync } from "$lib/firebase";
   import { onAuthStateChanged, signOut } from "firebase/auth";
   import { collection, onSnapshot } from "firebase/firestore";
 
@@ -257,6 +257,13 @@
   let isDownloadingUpdate = $state<boolean>(false);
   let updateProgress = $state<number>(0);
   let showUpdateModal = $state<boolean>(false);
+
+  async function openUpdateModal() {
+    showUpdateModal = true;
+    if (!updateInfo) {
+      await checkForUpdates(true);
+    }
+  }
 
   async function checkForUpdates(manual = false) {
     if (isCheckingUpdate) return;
@@ -648,33 +655,7 @@
     }
   }
 
-  async function submitBugReportForm() {
-    if (!bugDescription) return;
-    isSubmittingBug = true;
-    try {
-      const res: any = await invoke("submit_bug_report", {
-        payload: {
-          username: profileUsername,
-          device_name: profileDeviceName,
-          device_model: "MacBook",
-          os: "macOS",
-          app_version: "1.0.0",
-          severity: bugSeverity,
-          description: bugDescription,
-          uuid: profileUuid,
-          platform: "macos"
-        }
-      });
-      const issueNum = res.issue_number || 42;
-      showToast(`Bug reported! Reference: #${issueNum}`, "success");
-      bugDescription = "";
-      showBugReportModal = false;
-    } catch (e) {
-      showToast("Failed to submit bug report: " + e, "error");
-    } finally {
-      isSubmittingBug = false;
-    }
-  }
+
 
   async function loadNotificationsV2() {
     try {
@@ -1125,67 +1106,6 @@
     }
 
 
-
-    // Particle Canvas Animation
-    if (particleCanvas) {
-      const ctx = particleCanvas.getContext('2d');
-      if (ctx) {
-        let width = (particleCanvas.width = window.innerWidth);
-        let height = (particleCanvas.height = window.innerHeight);
-        const particles: { x: number; y: number; vx: number; vy: number; size: number; alpha: number; color: string }[] = [];
-        const colors = ['#c084fc', '#818cf8', '#38bdf8', '#34d399'];
-
-        for (let i = 0; i < 45; i++) {
-          particles.push({
-            x: Math.random() * width,
-            y: Math.random() * height,
-            vx: (Math.random() - 0.5) * 0.8,
-            vy: (Math.random() - 0.5) * 0.8,
-            size: Math.random() * 2.5 + 1,
-            alpha: Math.random() * 0.7 + 0.3,
-            color: colors[Math.floor(Math.random() * colors.length)]
-          });
-        }
-
-        let animFrame: number;
-        function renderParticles() {
-          if (!showIntro) return;
-          ctx.clearRect(0, 0, width, height);
-          for (let i = 0; i < particles.length; i++) {
-            const p = particles[i];
-            p.x += p.vx;
-            p.y += p.vy;
-            if (p.x < 0) p.x = width;
-            if (p.x > width) p.x = 0;
-            if (p.y < 0) p.y = height;
-            if (p.y > height) p.y = 0;
-
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-            ctx.fillStyle = p.color;
-            ctx.globalAlpha = p.alpha * 0.6;
-            ctx.fill();
-
-            // Connect nearby particles with laser filaments
-            for (let j = i + 1; j < particles.length; j++) {
-              const p2 = particles[j];
-              const dist = Math.hypot(p.x - p2.x, p.y - p2.y);
-              if (dist < 110) {
-                ctx.beginPath();
-                ctx.moveTo(p.x, p.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.strokeStyle = p.color;
-                ctx.globalAlpha = (1 - dist / 110) * 0.25;
-                ctx.lineWidth = 0.75;
-                ctx.stroke();
-              }
-            }
-          }
-          animFrame = requestAnimationFrame(renderParticles);
-        }
-        renderParticles();
-      }
-    }
 
     // Start local time updater for status bar mockup
     const updateTime = () => {
@@ -1815,7 +1735,7 @@
               </div>
             </div>
             <div class="update-banner-right">
-              <button class="btn btn-sm btn-primary" onclick={() => showUpdateModal = true}>Update Now</button>
+              <button class="btn btn-sm btn-primary" onclick={openUpdateModal}>Update Now</button>
             </div>
           </div>
         {/if}
@@ -2514,6 +2434,43 @@
             onToast={showToast}
           />
 
+          
+          <!-- Share Feedback Card -->
+          <div class="settings-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Share Feedback
+            </h3>
+            <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 12px; margin-top: -4px;">
+              Have a suggestion or feedback? We read every submission.
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; gap: 10px;">
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                  <label for="fb-type-select" style="font-size: 0.7rem; font-weight: bold; color: var(--text-secondary);">Feedback Type</label>
+                  <select id="fb-type-select" bind:value={feedbackType} style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 6px 10px; font-size: 0.8rem; color: var(--text-primary); outline: none;">
+                    <option value="General">General Feedback</option>
+                    <option value="Feature Request">Feature Request</option>
+                    <option value="Issue">Issue / Bug</option>
+                  </select>
+                </div>
+                <div style="flex: 2; display: flex; flex-direction: column; gap: 4px;">
+                  <label for="fb-email-input" style="font-size: 0.7rem; font-weight: bold; color: var(--text-secondary);">Email (Optional)</label>
+                  <input id="fb-email-input" type="email" placeholder="your@email.com" bind:value={feedbackEmail} style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 6px 10px; font-size: 0.8rem; color: var(--text-primary); outline: none;" />
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label for="fb-msg-textarea" style="font-size: 0.7rem; font-weight: bold; color: var(--text-secondary);">Message</label>
+                <textarea id="fb-msg-textarea" rows="3" placeholder="Tell us what you think or what we should build next..." bind:value={feedbackMessage} style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 8px 10px; font-size: 0.8rem; color: var(--text-primary); resize: vertical; min-height: 60px; font-family: inherit; outline: none;"></textarea>
+              </div>
+              <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+                <button class="btn btn-sm btn-primary" onclick={submitFeedback} disabled={!feedbackMessage || isSubmittingFeedback}>
+                  {isSubmittingFeedback ? "Submitting..." : "Submit Feedback"}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- Software Updates Card -->
           <div class="settings-section">
             <h3 class="section-title">
@@ -2538,7 +2495,7 @@
             </div>
             <div style="margin-top: 14px; display: flex; gap: 10px; justify-content: flex-end;">
               {#if updateInfo?.update_available}
-                <button class="btn btn-sm btn-primary" onclick={() => showUpdateModal = true}>View Update Details</button>
+                <button class="btn btn-sm btn-primary" onclick={openUpdateModal}>View Update Details</button>
               {/if}
               <button class="btn btn-sm btn-outline" disabled={isCheckingUpdate} onclick={() => checkForUpdates(true)}>
                 {isCheckingUpdate ? "Checking..." : "Check for Updates"}
@@ -2665,19 +2622,7 @@
     onComplete={handleOnboardingComplete}
   />
 
-  <!-- Bug Report Modal -->
-  <BugReportModal
-    show={showBugReportModal}
-    username={profileUsername}
-    deviceName={profileDeviceName}
-    uuid={profileUuid}
-    onClose={() => showBugReportModal = false}
-    onSubmit={async (payload) => {
-      const res: any = await invoke("submit_bug_report", { payload });
-      const issueNum = res.issue_number || 42;
-      showToast(`Bug reported! Reference: #${issueNum}`, "success");
-    }}
-  />
+
 
   <!-- Incoming Call Overlay -->
   {#if callState === "ringing" && activeCall}
@@ -5301,9 +5246,10 @@
 <!-- ═══════════════════════════════════════════════════════ -->
 <!-- IN-APP UPDATE MODAL                                     -->
 <!-- ═══════════════════════════════════════════════════════ -->
-{#if showUpdateModal && updateInfo}
+{#if showUpdateModal}
   <div class="modal-backdrop" onclick={() => !isDownloadingUpdate && (showUpdateModal = false)} role="dialog" aria-modal="true">
     <div class="modal-card update-modal" onclick={(e) => e.stopPropagation()} role="document">
+      {#if updateInfo}
       <div class="modal-header">
         <div class="update-badge-icon">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M12 2v10m0 0l4-4m-4 4L8 8m13 8v3a2 2 0 01-2 2H5a2 2 0 01-2-2v-3" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -5350,6 +5296,15 @@
           {isDownloadingUpdate ? `Downloading (${updateProgress}%)...` : "Download & Install DMG"}
         </button>
       </div>
+      {:else}
+        <div class="modal-header">
+          <h3>Checking for Updates...</h3>
+          <button class="btn-close" onclick={() => showUpdateModal = false} aria-label="Close">✕</button>
+        </div>
+        <div class="update-modal-body" style="padding: 24px; text-align: center;">
+          <p>Fetching latest release info from GitHub...</p>
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
