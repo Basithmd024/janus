@@ -643,8 +643,19 @@ class MainActivity : ComponentActivity() {
                                     iconBgColor = Color(0xFF81C784),
                                     icon = Icons.Default.DateRange,
                                     title = "Screen Mirror",
-                                    stat = "Active HD Stream",
-                                    subtext = "Live Stream to Mac"
+                                    stat = if (isScreenMirroringActive.value) "Streaming ON" else "Tap to Stream",
+                                    subtext = "Live HD Screen Cast",
+                                    onClick = {
+                                        if (!isScreenMirroringActive.value) {
+                                            val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+                                            projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+                                        } else {
+                                            val stopIntent = Intent(this@MainActivity, com.janus.app.core.JanusScreenCastService::class.java)
+                                            stopService(stopIntent)
+                                            isScreenMirroringActive.value = false
+                                            Toast.makeText(this@MainActivity, "Screen Mirroring Stopped", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 )
 
                                 EssentialTile(
@@ -653,8 +664,9 @@ class MainActivity : ComponentActivity() {
                                     iconBgColor = Color(0xFFE57373),
                                     icon = Icons.Default.Notifications,
                                     title = "Notifications",
-                                    stat = "Mirrored Live",
-                                    subtext = "Persistent DB Active"
+                                    stat = "Tap to View",
+                                    subtext = "Persistent DB Active",
+                                    onClick = { activeTabState = 1 }
                                 )
                             }
 
@@ -668,8 +680,18 @@ class MainActivity : ComponentActivity() {
                                     iconBgColor = Color(0xFFBA68C8),
                                     icon = Icons.Default.LocationOn,
                                     title = "Clipboard Sync",
-                                    stat = "Universal",
-                                    subtext = "Mac <-> Android Sync"
+                                    stat = "Tap to Sync",
+                                    subtext = "Mac <-> Android Sync",
+                                    onClick = {
+                                        val clipManager = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val text = clipManager.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                                        if (text.isNotEmpty()) {
+                                            janusService?.connectionManager?.sendPacket(com.janus.app.core.Packet("clipboard_update", java.util.UUID.randomUUID().toString(), System.currentTimeMillis(), com.google.gson.JsonObject().apply { addProperty("content", text) }))
+                                            Toast.makeText(this@MainActivity, "Clipboard Synced to Mac!", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(this@MainActivity, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 )
 
                                 EssentialTile(
@@ -678,8 +700,9 @@ class MainActivity : ComponentActivity() {
                                     iconBgColor = Color(0xFF4DD0E1),
                                     icon = Icons.Default.Share,
                                     title = "File Transfer",
-                                    stat = "Wi-Fi Drop",
-                                    subtext = "High-Speed P2P"
+                                    stat = "Tap to Send",
+                                    subtext = "High-Speed P2P",
+                                    onClick = { pickFileLauncher.launch("*/*") }
                                 )
                             }
                         }
@@ -1890,9 +1913,11 @@ fun EssentialTile(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     stat: String? = null,
-    subtext: String
+    subtext: String,
+    onClick: () -> Unit = {}
 ) {
     Card(
+        onClick = onClick,
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = bgColor),
         shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
