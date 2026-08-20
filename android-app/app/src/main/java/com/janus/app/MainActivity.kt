@@ -578,64 +578,47 @@ class MainActivity : ComponentActivity() {
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
 
-                        // 1. Hero Welcome Banner Card (Matching Reference Screenshot)
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                        ) {
-                            Column {
-                                Column(modifier = Modifier.padding(20.dp)) {
-                                    Text(
-                                        text = "Hi Md Basith,",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 19.sp,
-                                        color = Color(0xFF0F172A)
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "Good Evening,  Thursday, 20 August",
-                                        fontSize = 13.sp,
-                                        color = Color(0xFF64748B)
-                                    )
-                                }
-                                
-                                HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
-                                
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { activeTabState = 1 }
-                                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "View Schedule",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        color = Color(0xFF0F172A)
-                                    )
-                                    Text("➔", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF0F172A))
-                                }
-                            }
-                        }
 
-                        // Local Node Status
+
+                        // Device Identity & Custom Name Card
+                        val profileMgr = remember { com.janus.app.core.ProfileManager(this@MainActivity) }
+                        var currentDevNameInput by remember { mutableStateOf(profileMgr.getDeviceName()) }
+
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
                         ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text("Local Node Status", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text("Model: ${Build.MODEL}", color = Color.LightGray, fontSize = 14.sp)
-                                Text("FP: ${localFingerprint.value.take(16)}...", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-                                Spacer(modifier = Modifier.height(4.dp))
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text("Device Identity & Settings", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
+                                
+                                OutlinedTextField(
+                                    value = currentDevNameInput,
+                                    onValueChange = { currentDevNameInput = it },
+                                    label = { Text("Device Name") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+
+                                Button(
+                                    onClick = {
+                                        if (currentDevNameInput.isNotBlank()) {
+                                            profileMgr.setDeviceName(currentDevNameInput)
+                                            Toast.makeText(this@MainActivity, "Device Name Updated to: $currentDevNameInput", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Save Device Name")
+                                }
+
+                                HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
+
+                                Text("Model: ${Build.MODEL}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                                Text("Fingerprint: ${localFingerprint.value.take(16)}...", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
                                 Text(
-                                    text = if (isConnectedState.value) "Connected to Mac" else "Not Connected",
+                                    text = if (isConnectedState.value) "Connected to Mac Node" else "Not Connected",
                                     color = if (isConnectedState.value) Color(0xFF10B981) else Color.Gray,
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 14.sp
