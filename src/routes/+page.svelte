@@ -666,6 +666,7 @@
       const notifs = await invoke<any[]>("get_notifications_v2");
       if (notifs) {
         persistentNotifications = notifs;
+        activeNotifications = notifs;
       }
     } catch (e) {
       console.warn("loadNotificationsV2 error:", e);
@@ -1711,8 +1712,8 @@
       <button class="nav-item {activeTab === 'notifications' ? 'active' : ''}" onclick={() => selectTab('notifications')}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.73 21a2 2 0 01-3.46 0" stroke="currentColor" stroke-width="1.5"/></svg>
         <span>Notifications</span>
-        {#if activeNotifications.length > 0}
-          <span class="nav-badge">{activeNotifications.length}</span>
+        {#if persistentNotifications.length > 0}
+          <span class="nav-badge">{persistentNotifications.length}</span>
         {/if}
       </button>
       <button class="nav-item {activeTab === 'files' ? 'active' : ''}" onclick={() => selectTab('files')}>
@@ -1908,13 +1909,13 @@
                   </div>
                   <h4>Notifications</h4>
                 </div>
-                <span class="card-status-tag">{activeNotifications.length} active</span>
+                <span class="card-status-tag">{persistentNotifications.length} active</span>
               </div>
               <div class="overview-notif-list">
-                {#if activeNotifications.length === 0}
-                  <p class="empty-notif-hint">No unread notifications right now.</p>
+                {#if persistentNotifications.length === 0}
+                  <p class="empty-notif-hint">No stored notifications right now.</p>
                 {:else}
-                  {#each activeNotifications.slice(0, 2) as notif}
+                  {#each persistentNotifications.slice(0, 3) as notif}
                     <div class="mini-notif-item">
                       <span class="mini-notif-app">{notif.app_name}</span>
                       <span class="mini-notif-title">{notif.title}</span>
