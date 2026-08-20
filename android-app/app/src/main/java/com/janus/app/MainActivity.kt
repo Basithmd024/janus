@@ -1789,7 +1789,7 @@ data class AppUpdateInfo(
 )
 
 suspend fun checkMobileAppUpdate(): AppUpdateInfo = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-    val current = "4.0.0"
+    val current = "2.0.0"
     try {
         val client = okhttp3.OkHttpClient.Builder()
             .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
