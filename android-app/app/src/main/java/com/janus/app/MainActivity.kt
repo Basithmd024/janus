@@ -225,9 +225,11 @@ class MainActivity : ComponentActivity() {
         bindService(intent, connection, Context.BIND_AUTO_CREATE)
 
         setContent {
-            val systemDark = isSystemInDarkTheme()
-            var isManualDark by remember { mutableStateOf<Boolean?>(null) }
-            val isDark = isManualDark ?: false
+            val prefs = getSharedPreferences("janus_prefs", MODE_PRIVATE)
+            var isManualDark by remember { 
+                mutableStateOf(if (prefs.contains("theme_is_dark")) prefs.getBoolean("theme_is_dark", false) else false) 
+            }
+            val isDark = isManualDark
 
             val colorScheme = if (isDark) {
                 darkColorScheme(
@@ -285,7 +287,11 @@ class MainActivity : ComponentActivity() {
                     if (isAuthenticated || forceLocalMode) {
                         MainScreen(
                             isDark = isDark,
-                            onToggleTheme = { isManualDark = !isDark },
+                            onToggleTheme = { 
+                                val next = !isDark
+                                isManualDark = next
+                                prefs.edit().putBoolean("theme_is_dark", next).apply()
+                            },
                             onOpenLogin = { forceLocalMode = false }
                         )
                     } else {
@@ -516,6 +522,13 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     actions = {
+                        IconButton(onClick = onToggleTheme) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Toggle Dark/Light Mode",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                         IconButton(onClick = { startQrCodeScanner() }) {
                             Icon(
                                 imageVector = Icons.Default.Notifications,
@@ -626,22 +639,22 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 EssentialTile(
                                     modifier = Modifier.weight(1f),
-                                    bgColor = Color(0xFFE8F5E9),
+                                    bgColor = if (isDark) Color(0xFF1E293B) else Color(0xFFE8F5E9),
                                     iconBgColor = Color(0xFF81C784),
                                     icon = Icons.Default.DateRange,
-                                    title = "Attendance",
-                                    stat = "82.91 %",
-                                    subtext = "As on Aug 19, 12:41 PM"
+                                    title = "Screen Mirror",
+                                    stat = "Active HD Stream",
+                                    subtext = "Live Stream to Mac"
                                 )
 
                                 EssentialTile(
                                     modifier = Modifier.weight(1f),
-                                    bgColor = Color(0xFFFFEBEE),
+                                    bgColor = if (isDark) Color(0xFF1E293B) else Color(0xFFFFEBEE),
                                     iconBgColor = Color(0xFFE57373),
-                                    icon = Icons.Default.ShoppingCart,
-                                    title = "Fee Payments",
-                                    stat = "INR 0.00",
-                                    subtext = "As on Aug 10, 19:27 PM"
+                                    icon = Icons.Default.Notifications,
+                                    title = "Notifications",
+                                    stat = "Mirrored Live",
+                                    subtext = "Persistent DB Active"
                                 )
                             }
 
@@ -651,22 +664,22 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 EssentialTile(
                                     modifier = Modifier.weight(1f),
-                                    bgColor = Color(0xFFF3E5F5),
+                                    bgColor = if (isDark) Color(0xFF1E293B) else Color(0xFFF3E5F5),
                                     iconBgColor = Color(0xFFBA68C8),
                                     icon = Icons.Default.LocationOn,
-                                    title = "Campus Events",
-                                    stat = null,
-                                    subtext = "Live Stream Mirroring"
+                                    title = "Clipboard Sync",
+                                    stat = "Universal",
+                                    subtext = "Mac <-> Android Sync"
                                 )
 
                                 EssentialTile(
                                     modifier = Modifier.weight(1f),
-                                    bgColor = Color(0xFFE0F7FA),
+                                    bgColor = if (isDark) Color(0xFF1E293B) else Color(0xFFE0F7FA),
                                     iconBgColor = Color(0xFF4DD0E1),
-                                    icon = Icons.Default.Notifications,
-                                    title = "Campus Clubs",
-                                    stat = null,
-                                    subtext = "Active Notifications"
+                                    icon = Icons.Default.Share,
+                                    title = "File Transfer",
+                                    stat = "Wi-Fi Drop",
+                                    subtext = "High-Speed P2P"
                                 )
                             }
                         }
