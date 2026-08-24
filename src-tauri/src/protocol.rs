@@ -106,7 +106,8 @@ mod tests {
             name: "Pixel 8 Pro".to_string(),
             ip: "192.168.1.100".to_string(),
             port: 53318,
-            fingerprint: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string(),
+            fingerprint: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+                .to_string(),
             device_type: "android".to_string(),
             paired: true,
             username: Some("Babbi".to_string()),
@@ -121,13 +122,12 @@ mod tests {
     #[test]
     fn test_prepare_upload_negotiation() {
         let req = PrepareUploadRequest {
-            files: vec![
-                FileMetadata {
-                    name: "photo.jpg".to_string(),
-                    size: 2048576,
-                    hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
-                }
-            ],
+            files: vec![FileMetadata {
+                name: "photo.jpg".to_string(),
+                size: 2048576,
+                hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                    .to_string(),
+            }],
         };
 
         let serialized = serde_json::to_string(&req).expect("Failed serialize upload request");

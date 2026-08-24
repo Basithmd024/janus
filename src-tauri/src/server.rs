@@ -1,25 +1,30 @@
+use axum::{
+    extract::{
+        ws::{Message, WebSocket},
+        Path, State, WebSocketUpgrade,
+    },
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
+};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use axum::{
-    extract::{Path, State, WebSocketUpgrade, ws::{WebSocket, Message}},
-    routing::{get, post},
-    Router,
-    response::IntoResponse,
-    Json,
-};
-use tower_http::cors::CorsLayer;
-use tokio::net::TcpListener;
-use tokio_rustls::TlsAcceptor;
-use tokio_rustls::rustls::ServerConfig;
-use serde::Deserialize;
-use uuid::Uuid;
 use tauri::{AppHandle, Emitter};
+use tokio::net::TcpListener;
+use tokio_rustls::rustls::ServerConfig;
+use tokio_rustls::TlsAcceptor;
+use tower_http::cors::CorsLayer;
+use uuid::Uuid;
 
-use crate::protocol::{Packet, PrepareUploadRequest, PrepareUploadResponse, FileMetadata, DeviceInfo, UserProfile, NotificationItem};
-use crate::security::{Identity, PairedDeviceStore, save_paired_device};
 use crate::clipboard::ClipboardState;
+use crate::protocol::{
+    DeviceInfo, FileMetadata, NotificationItem, Packet, PrepareUploadRequest,
+    PrepareUploadResponse, UserProfile,
+};
+use crate::security::{save_paired_device, Identity, PairedDeviceStore};
 
 // Active transfer structure
 #[allow(dead_code)]
@@ -66,15 +71,12 @@ pub struct ServerState {
 
 pub type SharedState = Arc<ServerState>;
 
-pub async fn start_server(
-    state: SharedState,
-    port: u16,
-) -> Result<(), String> {
+pub async fn start_server(state: SharedState, port: u16) -> Result<(), String> {
     // Parse certs and key
     let certs = rustls_pemfile::certs(&mut state.identity.cert_pem.as_bytes())
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Failed to parse cert: {}", e))?;
-    
+
     let key = rustls_pemfile::private_key(&mut state.identity.key_pem.as_bytes())
         .map_err(|e| format!("Failed to parse private key: {}", e))?
         .ok_or_else(|| "No private key found in pem".to_string())?;
@@ -96,7 +98,8 @@ pub async fn start_server(
         .with_state(state.clone());
 
     let addr = SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), port);
-    let listener = TcpListener::bind(addr).await
+    let listener = TcpListener::bind(addr)
+        .await
         .map_err(|e| format!("Failed to bind to {}: {}", addr, e))?;
 
     println!("HTTPS Server listening on {}", addr);
@@ -127,10 +130,11 @@ pub async fn start_server(
                 let io = hyper_util::rt::TokioIo::new(tls_stream);
                 let service = hyper_util::service::TowerToHyperService::new(app);
                 if let Err(err) = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new()
+                    hyper_util::rt::TokioExecutor::new(),
                 )
                 .serve_connection_with_upgrades(io, service)
-                .await {
+                .await
+                {
                     eprintln!("Error serving connection: {:?}", err);
                 }
             });
@@ -141,10 +145,7 @@ pub async fn start_server(
 }
 
 // WebSocket handler
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<SharedState>,
-) -> impl IntoResponse {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<SharedState>) -> impl IntoResponse {
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
@@ -153,7 +154,11 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
     let client_id = Uuid::new_v4().to_string();
 
     // Store tx in state
-    state.active_ws_clients.lock().unwrap().insert(client_id.clone(), tx);
+    state
+        .active_ws_clients
+        .lock()
+        .unwrap()
+        .insert(client_id.clone(), tx);
 
     println!("New WebSocket connection established: {}", client_id);
 
@@ -217,8 +222,11 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
     state.active_ws_clients.lock().unwrap().remove(&client_id);
     let fingerprint = state.client_fingerprints.lock().unwrap().remove(&client_id);
     if let Some(fp) = fingerprint {
-        println!("WebSocket connection closed for device: {} (connection: {})", fp, client_id);
-        
+        println!(
+            "WebSocket connection closed for device: {} (connection: {})",
+            fp, client_id
+        );
+
         // Remove from active_devices if this connection is the one registered
         let mut active_devices = state.active_devices.lock().unwrap();
         let should_remove = if let Some((active_client_id, _)) = active_devices.get(&fp) {
@@ -229,7 +237,7 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
         if should_remove {
             active_devices.remove(&fp);
         }
-        
+
         let _ = state.app_handle.emit("device-removed", fp);
     } else {
         println!("WebSocket connection closed (unregistered): {}", client_id);
@@ -261,22 +269,25 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                             .unwrap_or_default()
                             .as_secs(),
                     };
-                    
+
                     if let Err(e) = save_paired_device(state.config_dir.clone(), store) {
                         eprintln!("Failed to save paired device: {}", e);
                         serde_json::json!({ "status": "error", "message": "Failed to save pairing" })
                     } else {
                         // Notify Svelte frontend that pairing was successful!
-                        let _ = state.app_handle.emit("device-paired", DeviceInfo {
-                            name: payload.device_name,
-                            ip: "".to_string(), // websocket connection doesn't require IP display here
-                            port: 0,
-                            fingerprint: payload.fingerprint,
-                            device_type: payload.device_type,
-                            paired: true,
-                            username: None,
-                            uuid: None,
-                        });
+                        let _ = state.app_handle.emit(
+                            "device-paired",
+                            DeviceInfo {
+                                name: payload.device_name,
+                                ip: "".to_string(), // websocket connection doesn't require IP display here
+                                port: 0,
+                                fingerprint: payload.fingerprint,
+                                device_type: payload.device_type,
+                                paired: true,
+                                username: None,
+                                uuid: None,
+                            },
+                        );
                         serde_json::json!({ "status": "success", "fingerprint": state.identity.fingerprint })
                     }
                 } else {
@@ -316,20 +327,30 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                 show_macos_notification("Janus Clipboard Synced", &truncated);
             }
             // Also forward the raw event for Svelte UI notifications
-            let _ = state.app_handle.emit("remote-clipboard-update", packet.payload);
+            let _ = state
+                .app_handle
+                .emit("remote-clipboard-update", packet.payload);
         }
         "notification.new" => {
-            let app_name = packet.payload.get("app_name")
+            let app_name = packet
+                .payload
+                .get("app_name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown App");
-            let title = packet.payload.get("title")
+            let title = packet
+                .payload
+                .get("title")
                 .and_then(|v| v.as_str())
                 .or_else(|| packet.payload.get("app_name").and_then(|v| v.as_str()))
                 .unwrap_or("Janus Notification");
-            let text = packet.payload.get("text")
+            let text = packet
+                .payload
+                .get("text")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let notif_id = packet.payload.get("notification_id")
+            let notif_id = packet
+                .payload
+                .get("notification_id")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
@@ -337,7 +358,11 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             show_macos_notification(title, text);
 
             let notif_item = crate::protocol::NotificationItem {
-                id: if notif_id.is_empty() { uuid::Uuid::new_v4().to_string() } else { notif_id.clone() },
+                id: if notif_id.is_empty() {
+                    uuid::Uuid::new_v4().to_string()
+                } else {
+                    notif_id.clone()
+                },
                 app_name: app_name.to_string(),
                 title: title.to_string(),
                 body: text.to_string(),
@@ -352,12 +377,18 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                 if db.len() > 500 {
                     db.truncate(500);
                 }
-                let _ = crate::security::save_persistent_notifications(state.config_dir.clone(), &db);
+                let _ =
+                    crate::security::save_persistent_notifications(state.config_dir.clone(), &db);
             }
 
             {
                 let mut notifs = state.recent_notifications.lock().unwrap();
-                notifs.retain(|n| n.get("notification_id").and_then(|v| v.as_str()).unwrap_or("") != notif_id.as_str());
+                notifs.retain(|n| {
+                    n.get("notification_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        != notif_id.as_str()
+                });
                 notifs.push(packet.payload.clone());
                 if notifs.len() > 50 {
                     notifs.remove(0);
@@ -369,20 +400,28 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
         }
         "notification.dismiss" => {
             // Forward the dismiss event to the Svelte frontend
-            let notif_id = packet.payload.get("notification_id")
+            let notif_id = packet
+                .payload
+                .get("notification_id")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
             println!("🔔 Notification dismissed on Android: {}", notif_id);
-            let _ = state.app_handle.emit("notification-dismiss", packet.payload);
+            let _ = state
+                .app_handle
+                .emit("notification-dismiss", packet.payload);
         }
         "call.incoming" => {
-            let number = packet.payload.get("number")
+            let number = packet
+                .payload
+                .get("number")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown Number");
-            let name = packet.payload.get("name")
+            let name = packet
+                .payload
+                .get("name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown Caller");
-            
+
             let message = format!("Incoming call from {} ({})", name, number);
             show_macos_notification("📞 Incoming Call", &message);
 
@@ -390,7 +429,9 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             let _ = state.app_handle.emit("call-incoming", packet.payload);
         }
         "call.state" => {
-            let state_str = packet.payload.get("state")
+            let state_str = packet
+                .payload
+                .get("state")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
             println!("📞 Call state updated on Android: {}", state_str);
@@ -400,35 +441,63 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             if let Some(calls) = packet.payload.get("calls").and_then(|v| v.as_array()) {
                 *state.call_history.lock().unwrap() = calls.clone();
             }
-            let call_count = packet.payload.get("calls")
+            let call_count = packet
+                .payload
+                .get("calls")
                 .and_then(|v| v.as_array())
                 .map(|a| a.len())
                 .unwrap_or(0);
-            println!("📞 Received call history from Android: {} calls", call_count);
+            println!(
+                "📞 Received call history from Android: {} calls",
+                call_count
+            );
             let _ = state.app_handle.emit("calls-list", packet.payload);
         }
         "sms.list" => {
             if let Some(messages) = packet.payload.get("messages").and_then(|v| v.as_array()) {
                 *state.sms_messages.lock().unwrap() = messages.clone();
             }
-            let sms_count = packet.payload.get("messages")
+            let sms_count = packet
+                .payload
+                .get("messages")
                 .and_then(|v| v.as_array())
                 .map(|a| a.len())
                 .unwrap_or(0);
-            println!("💬 Received SMS messages from Android: {} messages", sms_count);
+            println!(
+                "💬 Received SMS messages from Android: {} messages",
+                sms_count
+            );
             let _ = state.app_handle.emit("sms-list", packet.payload);
         }
         "device.status" => {
             println!("📡 Received device telemetry: {}", packet.payload);
             if let Some(tray) = state.app_handle.tray_by_id("main_tray") {
-                let battery = packet.payload.get("battery_level").and_then(|v| v.as_i64()).unwrap_or(0);
-                let charging_symbol = if packet.payload.get("is_charging").and_then(|v| v.as_bool()).unwrap_or(false) { "⚡" } else { "🔋" };
-                let _ = tray.set_tooltip(Some(format!("Janus: Phone Connected ({}% {})", battery, charging_symbol)));
+                let battery = packet
+                    .payload
+                    .get("battery_level")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let charging_symbol = if packet
+                    .payload
+                    .get("is_charging")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    "⚡"
+                } else {
+                    "🔋"
+                };
+                let _ = tray.set_tooltip(Some(format!(
+                    "Janus: Phone Connected ({}% {})",
+                    battery, charging_symbol
+                )));
             }
             {
                 let mut t = state.last_telemetry.lock().unwrap();
                 if let Some(existing) = t.as_mut() {
-                    if let (Some(existing_obj), Some(new_obj)) = (existing.as_object_mut(), packet.payload.as_object()) {
+                    if let (Some(existing_obj), Some(new_obj)) =
+                        (existing.as_object_mut(), packet.payload.as_object())
+                    {
                         for (k, v) in new_obj {
                             existing_obj.insert(k.clone(), v.clone());
                         }
@@ -446,7 +515,9 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             {
                 let mut t = state.last_telemetry.lock().unwrap();
                 if let Some(existing) = t.as_mut() {
-                    if let (Some(existing_obj), Some(new_obj)) = (existing.as_object_mut(), packet.payload.as_object()) {
+                    if let (Some(existing_obj), Some(new_obj)) =
+                        (existing.as_object_mut(), packet.payload.as_object())
+                    {
                         for (k, v) in new_obj {
                             existing_obj.insert(k.clone(), v.clone());
                         }
@@ -455,7 +526,9 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                     *t = Some(packet.payload.clone());
                 }
             }
-            let _ = state.app_handle.emit("device-ready", packet.payload.clone());
+            let _ = state
+                .app_handle
+                .emit("device-ready", packet.payload.clone());
             let _ = state.app_handle.emit("device-status", packet.payload);
         }
         "device.register" => {
@@ -470,14 +543,24 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
 
             match serde_json::from_value::<RegisterPayload>(packet.payload.clone()) {
                 Ok(payload) => {
-                    println!("📱 Device registered via WebSocket: {} ({})", payload.device_name, payload.fingerprint);
+                    println!(
+                        "📱 Device registered via WebSocket: {} ({})",
+                        payload.device_name, payload.fingerprint
+                    );
 
                     // Auto-pair on registration if not already saved (Trust-on-First-Sight)
-                    let paired_devices = crate::security::load_paired_devices(state.config_dir.clone()).unwrap_or_default();
-                    let is_paired = paired_devices.iter().any(|d| d.fingerprint == payload.fingerprint);
+                    let paired_devices =
+                        crate::security::load_paired_devices(state.config_dir.clone())
+                            .unwrap_or_default();
+                    let is_paired = paired_devices
+                        .iter()
+                        .any(|d| d.fingerprint == payload.fingerprint);
 
                     if !is_paired {
-                        println!("🤝 Auto-pairing & approving device: {} ({})", payload.device_name, payload.fingerprint);
+                        println!(
+                            "🤝 Auto-pairing & approving device: {} ({})",
+                            payload.device_name, payload.fingerprint
+                        );
                         let new_paired = crate::security::PairedDeviceStore {
                             fingerprint: payload.fingerprint.clone(),
                             name: payload.device_name.clone(),
@@ -486,7 +569,10 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                                 .unwrap_or_default()
                                 .as_secs(),
                         };
-                        let _ = crate::security::save_paired_device(state.config_dir.clone(), new_paired);
+                        let _ = crate::security::save_paired_device(
+                            state.config_dir.clone(),
+                            new_paired,
+                        );
                     }
 
                     // Send registration success packet back to phone
@@ -521,10 +607,17 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                     };
 
                     // Map this client_id to the device fingerprint
-                    state.client_fingerprints.lock().unwrap().insert(client_id.to_string(), payload.fingerprint.clone());
+                    state
+                        .client_fingerprints
+                        .lock()
+                        .unwrap()
+                        .insert(client_id.to_string(), payload.fingerprint.clone());
 
                     // Store in active devices mapping fingerprint -> (client_id, DeviceInfo)
-                    state.active_devices.lock().unwrap().insert(payload.fingerprint, (client_id.to_string(), device_info.clone()));
+                    state.active_devices.lock().unwrap().insert(
+                        payload.fingerprint,
+                        (client_id.to_string(), device_info.clone()),
+                    );
 
                     // Emit device-discovered so the frontend marks it online
                     let _ = state.app_handle.emit("device-discovered", device_info);
@@ -540,32 +633,39 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to parse RegisterPayload from packet: {}. Error: {}", packet.payload, e);
+                    eprintln!(
+                        "Failed to parse RegisterPayload from packet: {}. Error: {}",
+                        packet.payload, e
+                    );
                 }
             }
         }
         "feedback.submit" => {
             if let (Some(feedback_type), Some(message)) = (
                 packet.payload.get("feedback_type").and_then(|v| v.as_str()),
-                packet.payload.get("message").and_then(|v| v.as_str())
+                packet.payload.get("message").and_then(|v| v.as_str()),
             ) {
-                let email = packet.payload.get("email").and_then(|v| v.as_str()).unwrap_or("");
-                
+                let email = packet
+                    .payload
+                    .get("email")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
                 use std::fs::OpenOptions;
                 use std::io::Write;
-                
+
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
-                    
+
                 let feedback_entry = serde_json::json!({
                     "timestamp": timestamp,
                     "feedback_type": format!("android.{}", feedback_type),
                     "email": email,
                     "message": message
                 });
-                
+
                 let file_path = "/Users/basith/Desktop/janus/feedback.json";
                 if let Ok(mut file) = OpenOptions::new()
                     .create(true)
@@ -573,8 +673,11 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                     .append(true)
                     .open(file_path)
                 {
-                    let entry_str = format!("{}
-", serde_json::to_string(&feedback_entry).unwrap());
+                    let entry_str = format!(
+                        "{}
+",
+                        serde_json::to_string(&feedback_entry).unwrap()
+                    );
                     let _ = file.write_all(entry_str.as_bytes());
                     println!("📝 Appended Android feedback to {}", file_path);
                 }
@@ -590,7 +693,7 @@ async fn prepare_upload(
     Json(payload): Json<PrepareUploadRequest>,
 ) -> impl IntoResponse {
     let session_id = Uuid::new_v4().to_string();
-    
+
     let mut transfers = state.active_transfers.lock().unwrap();
     let transfer = ActiveTransfer {
         session_id: session_id.clone(),
@@ -600,9 +703,9 @@ async fn prepare_upload(
     transfers.insert(session_id.clone(), transfer);
 
     let accepted_files = payload.files.iter().map(|f| f.hash.clone()).collect();
-    
+
     println!("Prepared upload session: {}", session_id);
-    
+
     // Notify Svelte frontend that a file transfer is starting
     let _ = state.app_handle.emit("transfer-started", &session_id);
 
@@ -625,7 +728,11 @@ async fn upload_file(
             if let Some(file_meta) = transfer.files.iter().find(|f| f.hash == file_hash) {
                 (file_meta.name.clone(), file_meta.size)
             } else {
-                return (axum::http::StatusCode::NOT_FOUND, "File not found in session").into_response();
+                return (
+                    axum::http::StatusCode::NOT_FOUND,
+                    "File not found in session",
+                )
+                    .into_response();
             }
         } else {
             return (axum::http::StatusCode::NOT_FOUND, "Session not found").into_response();
@@ -639,10 +746,11 @@ async fn upload_file(
             return (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "Could not locate Downloads directory",
-            ).into_response();
+            )
+                .into_response();
         }
     };
-    
+
     let file_path = downloads_dir.join(&file_name);
     println!("Streaming file to {:?}", file_path);
 
@@ -652,7 +760,8 @@ async fn upload_file(
             return (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to create file: {}", e),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -670,25 +779,30 @@ async fn upload_file(
                     return (
                         axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                         format!("Failed to write chunk: {}", e),
-                    ).into_response();
+                    )
+                        .into_response();
                 }
                 bytes_written += chunk.len() as u64;
-                
+
                 // Emit progress to Svelte UI
-                let _ = state.app_handle.emit("transfer-progress", serde_json::json!({
-                    "session_id": session_id,
-                    "file_hash": file_hash,
-                    "bytes_received": bytes_written,
-                    "total_bytes": file_size,
-                    "name": file_name,
-                }));
+                let _ = state.app_handle.emit(
+                    "transfer-progress",
+                    serde_json::json!({
+                        "session_id": session_id,
+                        "file_hash": file_hash,
+                        "bytes_received": bytes_written,
+                        "total_bytes": file_size,
+                        "name": file_name,
+                    }),
+                );
             }
             Err(e) => {
                 let _ = tokio::fs::remove_file(&file_path).await;
                 return (
                     axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Error reading upload stream: {}", e),
-                ).into_response();
+                )
+                    .into_response();
             }
         }
     }
@@ -697,14 +811,17 @@ async fn upload_file(
         return (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to flush file: {}", e),
-        ).into_response();
+        )
+            .into_response();
     }
 
     // Update transfer stats
     {
         let mut transfers = state.active_transfers.lock().unwrap();
         if let Some(transfer) = transfers.get_mut(&session_id) {
-            transfer.received_bytes.insert(file_hash.clone(), bytes_written);
+            transfer
+                .received_bytes
+                .insert(file_hash.clone(), bytes_written);
         }
     }
 

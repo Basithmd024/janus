@@ -1,22 +1,24 @@
+use crate::server::show_macos_notification;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
-use std::collections::HashMap;
 use uuid::Uuid;
-use crate::server::show_macos_notification;
 
+mod clipboard;
+mod discovery;
 mod protocol;
 mod security;
-mod discovery;
 mod server;
-mod clipboard;
 
-use crate::security::{get_or_create_identity, get_or_create_user_profile, load_persistent_notifications};
-use crate::server::{ServerState, SharedState, start_server};
 use crate::clipboard::ClipboardState;
+use crate::security::{
+    get_or_create_identity, get_or_create_user_profile, load_persistent_notifications,
+};
+use crate::server::{start_server, ServerState, SharedState};
 
 #[tauri::command]
 async fn get_identity(state: State<'_, SharedState>) -> Result<protocol::DeviceInfo, String> {
@@ -39,14 +41,17 @@ async fn get_all_ips() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-async fn start_discovery(state: State<'_, SharedState>, handle: AppHandle) -> Result<String, String> {
+async fn start_discovery(
+    state: State<'_, SharedState>,
+    handle: AppHandle,
+) -> Result<String, String> {
     // Start discovery scanning
     discovery::start_browsing(handle.clone())?;
-    
+
     // Start advertising our own presence
     let hostname = sys_info::hostname().unwrap_or_else(|_| "Janus macOS".to_string());
     discovery::start_advertising(&hostname, 53317, &state.identity.fingerprint)?;
-    
+
     Ok("Discovery started".to_string())
 }
 
@@ -66,19 +71,25 @@ async fn get_pairing_pin(state: State<'_, SharedState>) -> Result<String, String
         let rng = ring::rand::SystemRandom::new();
         let mut bytes = [0u8; 3];
         rng.fill(&mut bytes).map_err(|e| e.to_string())?;
-        let number = ((bytes[0] as u32) << 16 | (bytes[1] as u32) << 8 | (bytes[2] as u32)) % 900000 + 100000;
+        let number = ((bytes[0] as u32) << 16 | (bytes[1] as u32) << 8 | (bytes[2] as u32))
+            % 900000
+            + 100000;
         *pin_guard = Some(number.to_string());
     }
     Ok(pin_guard.as_ref().unwrap().clone())
 }
 
 #[tauri::command]
-async fn get_paired_devices(state: State<'_, SharedState>) -> Result<Vec<security::PairedDeviceStore>, String> {
+async fn get_paired_devices(
+    state: State<'_, SharedState>,
+) -> Result<Vec<security::PairedDeviceStore>, String> {
     security::load_paired_devices(state.config_dir.clone())
 }
 
 #[tauri::command]
-async fn get_connected_devices(state: State<'_, SharedState>) -> Result<Vec<protocol::DeviceInfo>, String> {
+async fn get_connected_devices(
+    state: State<'_, SharedState>,
+) -> Result<Vec<protocol::DeviceInfo>, String> {
     let active = state.active_devices.lock().unwrap();
     Ok(active.values().map(|(_, info)| info.clone()).collect())
 }
@@ -90,7 +101,7 @@ async fn unpair_device(
 ) -> Result<String, String> {
     let mut devices = security::load_paired_devices(state.config_dir.clone())?;
     devices.retain(|d| d.fingerprint != fingerprint);
-    
+
     let path = state.config_dir.join("paired_devices.json");
     let file_content = serde_json::to_string_pretty(&devices).map_err(|e| e.to_string())?;
     std::fs::write(path, file_content).map_err(|e| e.to_string())?;
@@ -119,7 +130,7 @@ async fn unpair_device(
             }
         }
     }
-    
+
     Ok("Device unpaired successfully".to_string())
 }
 
@@ -135,14 +146,13 @@ async fn send_file_inner(
         return Err("File does not exist".to_string());
     }
 
-    let file_name = path.file_name()
+    let file_name = path
+        .file_name()
         .ok_or_else(|| "Invalid file path".to_string())?
         .to_string_lossy()
         .to_string();
-    
-    let file_size = std::fs::metadata(&path)
-        .map_err(|e| e.to_string())?
-        .len();
+
+    let file_size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
 
     // Compute SHA-256 by streaming
     let hash_hex = {
@@ -152,28 +162,43 @@ async fn send_file_inner(
         let mut buffer = [0u8; 65536];
         loop {
             let n = file.read(&mut buffer).map_err(|e| e.to_string())?;
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             hasher.update(&buffer[..n]);
         }
         let hash = hasher.finish();
-        hash.as_ref().iter().map(|b| format!("{:02x}", b)).collect::<Vec<String>>().join("")
+        hash.as_ref()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<String>>()
+            .join("")
     };
 
-    println!("Preparing to send file {} ({} bytes) to {}:{}", file_name, file_size, device_ip, device_port);
+    println!(
+        "Preparing to send file {} ({} bytes) to {}:{}",
+        file_name, file_size, device_ip, device_port
+    );
 
     // Notify frontend to show animated HUD
-    let _ = app_handle.emit("file-transfer-start", serde_json::json!({
-        "name": file_name,
-        "size": file_size,
-        "direction": "outgoing"
-    }));
+    let _ = app_handle.emit(
+        "file-transfer-start",
+        serde_json::json!({
+            "name": file_name,
+            "size": file_size,
+            "direction": "outgoing"
+        }),
+    );
 
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .build()
         .map_err(|e| e.to_string())?;
 
-    let prepare_url = format!("https://{}:{}/api/v1/prepare-upload", device_ip, device_port);
+    let prepare_url = format!(
+        "https://{}:{}/api/v1/prepare-upload",
+        device_ip, device_port
+    );
     let prepare_req = protocol::PrepareUploadRequest {
         files: vec![protocol::FileMetadata {
             name: file_name.clone(),
@@ -182,13 +207,15 @@ async fn send_file_inner(
         }],
     };
 
-    let response = client.post(&prepare_url)
+    let response = client
+        .post(&prepare_url)
         .json(&prepare_req)
         .send()
         .await
         .map_err(|e| format!("Failed to reach device: {}", e))?;
 
-    let prepare_resp: protocol::PrepareUploadResponse = response.json()
+    let prepare_resp: protocol::PrepareUploadResponse = response
+        .json()
         .await
         .map_err(|e| format!("Failed to parse device response: {}", e))?;
 
@@ -199,7 +226,8 @@ async fn send_file_inner(
 
     let file_bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
 
-    let _send_resp = client.post(&upload_url)
+    let _send_resp = client
+        .post(&upload_url)
         .header("Content-Type", "application/octet-stream")
         .body(file_bytes)
         .send()
@@ -209,13 +237,19 @@ async fn send_file_inner(
     println!("Successfully sent file {} to device", file_name);
 
     // Notify frontend of completion
-    let _ = app_handle.emit("file-transfer-complete", serde_json::json!({
-        "name": file_name,
-        "size": file_size,
-        "direction": "outgoing"
-    }));
+    let _ = app_handle.emit(
+        "file-transfer-complete",
+        serde_json::json!({
+            "name": file_name,
+            "size": file_size,
+            "direction": "outgoing"
+        }),
+    );
 
-    show_macos_notification("Janus File Transfer", &format!("Successfully sent {} to mobile!", file_name));
+    show_macos_notification(
+        "Janus File Transfer",
+        &format!("Successfully sent {} to mobile!", file_name),
+    );
     Ok("File sent successfully".to_string())
 }
 
@@ -236,18 +270,12 @@ async fn start_clipboard_sync(
     cb_state: State<'_, Arc<ClipboardState>>,
     handle: AppHandle,
 ) -> Result<String, String> {
-    clipboard::start_clipboard_polling(
-        state.inner().clone(),
-        handle,
-        cb_state.inner().clone(),
-    );
+    clipboard::start_clipboard_polling(state.inner().clone(), handle, cb_state.inner().clone());
     Ok("Clipboard sync started".to_string())
 }
 
 #[tauri::command]
-async fn stop_clipboard_sync(
-    cb_state: State<'_, Arc<ClipboardState>>,
-) -> Result<String, String> {
+async fn stop_clipboard_sync(cb_state: State<'_, Arc<ClipboardState>>) -> Result<String, String> {
     clipboard::stop_clipboard_polling(&cb_state);
     Ok("Clipboard sync stopped".to_string())
 }
@@ -377,9 +405,7 @@ async fn make_phone_call(
 }
 
 #[tauri::command]
-async fn answer_phone_call(
-    state: State<'_, SharedState>,
-) -> Result<String, String> {
+async fn answer_phone_call(state: State<'_, SharedState>) -> Result<String, String> {
     let packet = crate::protocol::Packet {
         r#type: "call.action".to_string(),
         id: uuid::Uuid::new_v4().to_string(),
@@ -404,9 +430,7 @@ async fn answer_phone_call(
 }
 
 #[tauri::command]
-async fn hangup_phone_call(
-    state: State<'_, SharedState>,
-) -> Result<String, String> {
+async fn hangup_phone_call(state: State<'_, SharedState>) -> Result<String, String> {
     let packet = crate::protocol::Packet {
         r#type: "call.action".to_string(),
         id: uuid::Uuid::new_v4().to_string(),
@@ -431,9 +455,7 @@ async fn hangup_phone_call(
 }
 
 #[tauri::command]
-async fn start_screencast(
-    state: State<'_, SharedState>,
-) -> Result<String, String> {
+async fn start_screencast(state: State<'_, SharedState>) -> Result<String, String> {
     let packet = crate::protocol::Packet {
         r#type: "screencast.action".to_string(),
         id: uuid::Uuid::new_v4().to_string(),
@@ -458,9 +480,7 @@ async fn start_screencast(
 }
 
 #[tauri::command]
-async fn stop_screencast(
-    state: State<'_, SharedState>,
-) -> Result<String, String> {
+async fn stop_screencast(state: State<'_, SharedState>) -> Result<String, String> {
     let packet = crate::protocol::Packet {
         r#type: "screencast.action".to_string(),
         id: uuid::Uuid::new_v4().to_string(),
@@ -553,10 +573,7 @@ async fn inject_remote_swipe(
 }
 
 #[tauri::command]
-async fn inject_remote_key(
-    state: State<'_, SharedState>,
-    key: String,
-) -> Result<String, String> {
+async fn inject_remote_key(state: State<'_, SharedState>, key: String) -> Result<String, String> {
     let packet = crate::protocol::Packet {
         r#type: "input.action".to_string(),
         id: uuid::Uuid::new_v4().to_string(),
@@ -582,10 +599,7 @@ async fn inject_remote_key(
 }
 
 #[tauri::command]
-async fn send_audio_frame(
-    state: State<'_, SharedState>,
-    bytes: Vec<u8>,
-) -> Result<String, String> {
+async fn send_audio_frame(state: State<'_, SharedState>, bytes: Vec<u8>) -> Result<String, String> {
     let mut payload = Vec::with_capacity(bytes.len() + 1);
     payload.push(0x03); // Audio frame header
     payload.extend_from_slice(&bytes);
@@ -600,9 +614,7 @@ async fn send_audio_frame(
 }
 
 #[tauri::command]
-async fn sync_calls(
-    state: State<'_, SharedState>,
-) -> Result<String, String> {
+async fn sync_calls(state: State<'_, SharedState>) -> Result<String, String> {
     let packet = crate::protocol::Packet {
         r#type: "sync.calls".to_string(),
         id: uuid::Uuid::new_v4().to_string(),
@@ -625,9 +637,7 @@ async fn sync_calls(
 }
 
 #[tauri::command]
-async fn sync_sms(
-    state: State<'_, SharedState>,
-) -> Result<String, String> {
+async fn sync_sms(state: State<'_, SharedState>) -> Result<String, String> {
     let packet = crate::protocol::Packet {
         r#type: "sync.sms".to_string(),
         id: uuid::Uuid::new_v4().to_string(),
@@ -656,7 +666,9 @@ async fn get_latest_telemetry(state: State<'_, SharedState>) -> Result<serde_jso
 }
 
 #[tauri::command]
-async fn get_recent_notifications(state: State<'_, SharedState>) -> Result<Vec<serde_json::Value>, String> {
+async fn get_recent_notifications(
+    state: State<'_, SharedState>,
+) -> Result<Vec<serde_json::Value>, String> {
     let notifs = state.recent_notifications.lock().unwrap();
     Ok(notifs.clone())
 }
@@ -693,7 +705,6 @@ async fn request_device_status(state: State<'_, SharedState>) -> Result<(), Stri
     Ok(())
 }
 
-
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct UpdateInfo {
     pub current_version: String,
@@ -708,17 +719,20 @@ pub struct UpdateInfo {
 fn is_version_newer(latest: &str, current: &str) -> bool {
     let clean_latest = latest.trim_start_matches('v');
     let clean_current = current.trim_start_matches('v');
-    
-    let parse_nums = |s: &str| -> Vec<u32> {
-        s.split('.').filter_map(|p| p.parse::<u32>().ok()).collect()
-    };
-    
+
+    let parse_nums =
+        |s: &str| -> Vec<u32> { s.split('.').filter_map(|p| p.parse::<u32>().ok()).collect() };
+
     let l_parts = parse_nums(clean_latest);
     let c_parts = parse_nums(clean_current);
-    
+
     for (l, c) in l_parts.iter().zip(c_parts.iter()) {
-        if l > c { return true; }
-        if l < c { return false; }
+        if l > c {
+            return true;
+        }
+        if l < c {
+            return false;
+        }
     }
     l_parts.len() > c_parts.len()
 }
@@ -751,7 +765,9 @@ async fn update_user_profile(
 }
 
 #[tauri::command]
-async fn get_notifications_v2(state: State<'_, SharedState>) -> Result<Vec<protocol::NotificationItem>, String> {
+async fn get_notifications_v2(
+    state: State<'_, SharedState>,
+) -> Result<Vec<protocol::NotificationItem>, String> {
     let db = state.notifications_db.lock().unwrap();
     Ok(db.clone())
 }
@@ -795,7 +811,9 @@ async fn clear_notifications(state: State<'_, SharedState>) -> Result<(), String
 }
 
 #[tauri::command]
-async fn submit_bug_report(payload: protocol::BugReportPayload) -> Result<serde_json::Value, String> {
+async fn submit_bug_report(
+    payload: protocol::BugReportPayload,
+) -> Result<serde_json::Value, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
@@ -816,7 +834,10 @@ async fn submit_bug_report(payload: protocol::BugReportPayload) -> Result<serde_
             }
         }
         Err(e) => {
-            eprintln!("Failed to send bug report to proxy: {}. Saving locally...", e);
+            eprintln!(
+                "Failed to send bug report to proxy: {}. Saving locally...",
+                e
+            );
             Ok(serde_json::json!({
                 "status": "queued",
                 "message": "Offline mode: Bug report saved locally and will auto-submit when online.",
@@ -827,34 +848,39 @@ async fn submit_bug_report(payload: protocol::BugReportPayload) -> Result<serde_
 }
 
 #[tauri::command]
-async fn submit_feedback(feedback_type: String, email: String, message: String) -> Result<(), String> {
+async fn submit_feedback(
+    feedback_type: String,
+    email: String,
+    message: String,
+) -> Result<(), String> {
     use std::fs::OpenOptions;
     use std::io::Write;
-    
+
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-        
+
     let feedback_entry = serde_json::json!({
         "timestamp": timestamp,
         "feedback_type": feedback_type,
         "email": email,
         "message": message
     });
-    
+
     let file_path = "/Users/basith/Desktop/janus/feedback.json";
-    
+
     let mut file = OpenOptions::new()
         .create(true)
         .write(true)
         .append(true)
         .open(file_path)
         .map_err(|e| e.to_string())?;
-        
+
     let entry_str = format!("{}\n", serde_json::to_string(&feedback_entry).unwrap());
-    file.write_all(entry_str.as_bytes()).map_err(|e| e.to_string())?;
-    
+    file.write_all(entry_str.as_bytes())
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
@@ -869,7 +895,10 @@ async fn check_for_updates() -> Result<UpdateInfo, String> {
         .map_err(|e| e.to_string())?;
 
     let mut latest_ver = current_version.clone();
-    let mut download_url = format!("https://github.com/Basithmd024/janus/releases/download/v{}/Janus.dmg", current_version);
+    let mut download_url = format!(
+        "https://github.com/Basithmd024/janus/releases/download/v{}/Janus.dmg",
+        current_version
+    );
     let release_url = "https://github.com/Basithmd024/janus/releases/latest".to_string();
     let mut notes = vec![];
 
@@ -880,11 +909,18 @@ async fn check_for_updates() -> Result<UpdateInfo, String> {
             if let Some(v) = json.get("version").and_then(|v| v.as_str()) {
                 latest_ver = v.to_string();
             }
-            if let Some(d) = json.get("downloads").and_then(|d| d.get("macos_dmg")).and_then(|u| u.as_str()) {
+            if let Some(d) = json
+                .get("downloads")
+                .and_then(|d| d.get("macos_dmg"))
+                .and_then(|u| u.as_str())
+            {
                 download_url = d.to_string();
             }
             if let Some(n) = json.get("notes").and_then(|n| n.as_array()) {
-                notes = n.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect();
+                notes = n
+                    .iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .collect();
             }
         }
     }
@@ -908,7 +944,7 @@ async fn download_and_open_update(
     download_url: String,
 ) -> Result<String, String> {
     use futures_util::StreamExt;
-    
+
     let client = reqwest::Client::builder()
         .user_agent("Janus-Desktop-App")
         .build()
@@ -916,14 +952,15 @@ async fn download_and_open_update(
 
     println!("Starting in-app download for update: {}", download_url);
 
-    let response = client.get(&download_url)
+    let response = client
+        .get(&download_url)
         .send()
         .await
         .map_err(|e| format!("Failed to download update: {}", e))?;
 
     let total_size = response.content_length().unwrap_or(0);
     let temp_dmg = std::env::temp_dir().join("Janus-Update.dmg");
-    
+
     let mut file = tokio::fs::File::create(&temp_dmg)
         .await
         .map_err(|e| format!("Failed to create update file: {}", e))?;
@@ -944,25 +981,36 @@ async fn download_and_open_update(
             50
         };
 
-        let _ = handle.emit("update-download-progress", serde_json::json!({
-            "downloaded": downloaded,
-            "total": total_size,
-            "progress": progress
-        }));
+        let _ = handle.emit(
+            "update-download-progress",
+            serde_json::json!({
+                "downloaded": downloaded,
+                "total": total_size,
+                "progress": progress
+            }),
+        );
     }
 
-    tokio::io::AsyncWriteExt::flush(&mut file).await.map_err(|e| e.to_string())?;
+    tokio::io::AsyncWriteExt::flush(&mut file)
+        .await
+        .map_err(|e| e.to_string())?;
     drop(file);
 
     println!("Opening downloaded update DMG: {:?}", temp_dmg);
     let _ = std::process::Command::new("open").arg(&temp_dmg).spawn();
 
-    let _ = handle.emit("update-download-complete", serde_json::json!({
-        "status": "ready",
-        "path": temp_dmg.to_string_lossy().to_string()
-    }));
+    let _ = handle.emit(
+        "update-download-complete",
+        serde_json::json!({
+            "status": "ready",
+            "path": temp_dmg.to_string_lossy().to_string()
+        }),
+    );
 
-    show_macos_notification("Janus Update", "Update downloaded! The installer disk image is open on your desktop.");
+    show_macos_notification(
+        "Janus Update",
+        "Update downloaded! The installer disk image is open on your desktop.",
+    );
     Ok("Update downloaded successfully".to_string())
 }
 
