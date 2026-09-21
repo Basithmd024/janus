@@ -101,6 +101,15 @@ jobs:
           path: android-app/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
 
+      - name: Attach APK to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.2.0
+          files: android-app/app/build/outputs/apk/debug/app-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
   # ══════════════════════════════════════════════
   # 4. End-to-End Security Vulnerability Scanner
   # ══════════════════════════════════════════════

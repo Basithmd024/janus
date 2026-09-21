@@ -1,9 +1,12 @@
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
-use std::time::Duration;
 use arboard::Clipboard;
+use serde::{Deserialize, Serialize};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
-use serde::{Serialize, Deserialize};
 
 use crate::server::SharedState;
 
@@ -147,15 +150,18 @@ pub fn start_clipboard_polling(
                 }
 
                 // Also notify the Svelte frontend
-                let _ = app_inner.emit("clipboard-synced", ClipboardPayload {
-                    content: if text.len() > 100 {
-                        format!("{}…", &text[..100])
-                    } else {
-                        text
+                let _ = app_inner.emit(
+                    "clipboard-synced",
+                    ClipboardPayload {
+                        content: if text.len() > 100 {
+                            format!("{}…", &text[..100])
+                        } else {
+                            text
+                        },
+                        content_type: "text/plain".to_string(),
+                        source: "local".to_string(),
                     },
-                    content_type: "text/plain".to_string(),
-                    source: "local".to_string(),
-                });
+                );
             })
             .await;
         }
@@ -194,15 +200,18 @@ pub fn write_remote_to_local(
             }
             println!("📋 Remote clipboard content written to local pasteboard");
 
-            let _ = app_handle.emit("clipboard-synced", ClipboardPayload {
-                content: if content.len() > 100 {
-                    format!("{}…", &content[..100])
-                } else {
-                    content.to_string()
+            let _ = app_handle.emit(
+                "clipboard-synced",
+                ClipboardPayload {
+                    content: if content.len() > 100 {
+                        format!("{}…", &content[..100])
+                    } else {
+                        content.to_string()
+                    },
+                    content_type: "text/plain".to_string(),
+                    source: "remote".to_string(),
                 },
-                content_type: "text/plain".to_string(),
-                source: "remote".to_string(),
-            });
+            );
         }
         Err(e) => {
             eprintln!("Failed to access clipboard: {}", e);

@@ -1,10 +1,10 @@
-use crate::protocol::{UserProfile, NotificationItem};
+use crate::protocol::{NotificationItem, UserProfile};
+use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, SanType};
+use ring::digest;
+use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use rcgen::{CertificateParams, KeyPair, DistinguishedName, SanType, DnType};
-use ring::digest;
-use serde::{Serialize, Deserialize};
 
 #[derive(Clone)]
 pub struct Identity {
@@ -20,12 +20,12 @@ pub fn get_or_create_identity(config_dir: PathBuf) -> Result<Identity, String> {
     if cert_path.exists() && key_path.exists() {
         let mut cert_pem = String::new();
         let mut key_pem = String::new();
-        
+
         File::open(&cert_path)
             .map_err(|e| e.to_string())?
             .read_to_string(&mut cert_pem)
             .map_err(|e| e.to_string())?;
-            
+
         File::open(&key_path)
             .map_err(|e| e.to_string())?
             .read_to_string(&mut key_pem)
@@ -46,14 +46,18 @@ pub fn get_or_create_identity(config_dir: PathBuf) -> Result<Identity, String> {
     // Generate new certificate using rcgen 0.13
     let mut params = CertificateParams::default();
     params.distinguished_name = DistinguishedName::new();
-    params.distinguished_name.push(DnType::CommonName, "Janus Node");
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "Janus Node");
     params.subject_alt_names = vec![
         SanType::DnsName(rcgen::Ia5String::try_from("localhost").unwrap()),
         SanType::DnsName(rcgen::Ia5String::try_from("janus.local").unwrap()),
     ];
 
-    let key_pair = KeyPair::generate().map_err(|e| format!("Failed to generate key pair: {}", e))?;
-    let cert = params.self_signed(&key_pair)
+    let key_pair =
+        KeyPair::generate().map_err(|e| format!("Failed to generate key pair: {}", e))?;
+    let cert = params
+        .self_signed(&key_pair)
         .map_err(|e| format!("Failed to generate self-signed cert: {}", e))?;
 
     let cert_pem = cert.pem();
@@ -61,14 +65,21 @@ pub fn get_or_create_identity(config_dir: PathBuf) -> Result<Identity, String> {
 
     // Save to files
     let mut cert_file = File::create(&cert_path).map_err(|e| e.to_string())?;
-    cert_file.write_all(cert_pem.as_bytes()).map_err(|e| e.to_string())?;
+    cert_file
+        .write_all(cert_pem.as_bytes())
+        .map_err(|e| e.to_string())?;
 
     let mut key_file = File::create(&key_path).map_err(|e| e.to_string())?;
-    key_file.write_all(key_pem.as_bytes()).map_err(|e| e.to_string())?;
+    key_file
+        .write_all(key_pem.as_bytes())
+        .map_err(|e| e.to_string())?;
 
     let fingerprint = compute_fingerprint_from_pem(&cert_pem)?;
 
-    println!("Generated new self-signed identity. Fingerprint: {}", fingerprint);
+    println!(
+        "Generated new self-signed identity. Fingerprint: {}",
+        fingerprint
+    );
 
     Ok(Identity {
         cert_pem,
@@ -78,13 +89,14 @@ pub fn get_or_create_identity(config_dir: PathBuf) -> Result<Identity, String> {
 }
 
 fn compute_fingerprint_from_pem(cert_pem: &str) -> Result<String, String> {
-    let parsed_pem = pem::parse(cert_pem)
-        .map_err(|e| format!("Failed to parse certificate PEM: {}", e))?;
+    let parsed_pem =
+        pem::parse(cert_pem).map_err(|e| format!("Failed to parse certificate PEM: {}", e))?;
     let der = parsed_pem.contents();
 
     // Compute SHA-256 fingerprint
     let hash = digest::digest(&digest::SHA256, &der);
-    let hex_fingerprint = hash.as_ref()
+    let hex_fingerprint = hash
+        .as_ref()
         .iter()
         .map(|b| format!("{:02x}", b))
         .collect::<Vec<String>>()
@@ -107,15 +119,19 @@ pub fn load_paired_devices(config_dir: PathBuf) -> Result<Vec<PairedDeviceStore>
     }
 
     let file_content = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let devices: Vec<PairedDeviceStore> = serde_json::from_str(&file_content).map_err(|e| e.to_string())?;
+    let devices: Vec<PairedDeviceStore> =
+        serde_json::from_str(&file_content).map_err(|e| e.to_string())?;
     Ok(devices)
 }
 
 pub fn save_paired_device(config_dir: PathBuf, device: PairedDeviceStore) -> Result<(), String> {
     let mut devices = load_paired_devices(config_dir.clone())?;
-    
+
     // Check if already paired, update or insert
-    if let Some(pos) = devices.iter().position(|d| d.fingerprint == device.fingerprint) {
+    if let Some(pos) = devices
+        .iter()
+        .position(|d| d.fingerprint == device.fingerprint)
+    {
         devices[pos] = device;
     } else {
         devices.push(device);
@@ -138,7 +154,8 @@ mod tests {
         let _ = fs::create_dir_all(&path);
 
         let device = PairedDeviceStore {
-            fingerprint: "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff".to_string(),
+            fingerprint: "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff"
+                .to_string(),
             name: "Galaxy S24".to_string(),
             added_at: 1723985000,
         };
@@ -168,16 +185,17 @@ pub fn get_or_create_user_profile(config_dir: PathBuf) -> Result<UserProfile, St
     let path = config_dir.join("user_profile.json");
     if path.exists() {
         match fs::read_to_string(&path) {
-            Ok(file_content) => {
-                match serde_json::from_str::<UserProfile>(&file_content) {
-                    Ok(profile) => return Ok(profile),
-                    Err(e) => {
-                        eprintln!("⚠️ Warning: user_profile.json was corrupted or invalid ({})! Recovering with new profile...", e);
-                    }
+            Ok(file_content) => match serde_json::from_str::<UserProfile>(&file_content) {
+                Ok(profile) => return Ok(profile),
+                Err(e) => {
+                    eprintln!("⚠️ Warning: user_profile.json was corrupted or invalid ({})! Recovering with new profile...", e);
                 }
-            }
+            },
             Err(e) => {
-                eprintln!("⚠️ Warning: Failed to read user_profile.json ({})! Recovering...", e);
+                eprintln!(
+                    "⚠️ Warning: Failed to read user_profile.json ({})! Recovering...",
+                    e
+                );
             }
         }
     }
@@ -218,7 +236,10 @@ pub fn load_persistent_notifications(config_dir: PathBuf) -> Vec<NotificationIte
     Vec::new()
 }
 
-pub fn save_persistent_notifications(config_dir: PathBuf, notifications: &[NotificationItem]) -> Result<(), String> {
+pub fn save_persistent_notifications(
+    config_dir: PathBuf,
+    notifications: &[NotificationItem],
+) -> Result<(), String> {
     let _ = fs::create_dir_all(&config_dir);
     let path = config_dir.join("notifications_db.json");
     let json = serde_json::to_string(&notifications).map_err(|e| e.to_string())?;

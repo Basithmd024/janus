@@ -1,9 +1,9 @@
+use crate::protocol::DeviceInfo;
+use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Mutex;
-use mdns_sd::{ServiceDaemon, ServiceInfo, ServiceEvent};
 use tauri::{AppHandle, Emitter};
-use crate::protocol::DeviceInfo;
 
 use std::sync::OnceLock;
 
@@ -28,7 +28,10 @@ pub fn get_best_local_ip() -> String {
             if let IpAddr::V4(ipv4) = ip {
                 if !ipv4.is_loopback() && !ipv4.is_link_local() {
                     let name_lower = name.to_lowercase();
-                    if name_lower.starts_with("en") || name_lower.starts_with("wlan") || name_lower.starts_with("eth") {
+                    if name_lower.starts_with("en")
+                        || name_lower.starts_with("wlan")
+                        || name_lower.starts_with("eth")
+                    {
                         return ipv4.to_string();
                     }
                 }
@@ -67,7 +70,6 @@ pub fn get_all_local_ips() -> Vec<String> {
     ips
 }
 
-
 pub fn start_advertising(name: &str, port: u16, fingerprint: &str) -> Result<(), String> {
     let mut active = ACTIVE_SERVICE.lock().unwrap();
     if active.is_some() {
@@ -77,7 +79,11 @@ pub fn start_advertising(name: &str, port: u16, fingerprint: &str) -> Result<(),
     let ip_str = get_best_local_ip();
 
     let service_type = "_janus._tcp.local.";
-    let instance_name = format!("{}.{}", name, fingerprint.chars().take(8).collect::<String>());
+    let instance_name = format!(
+        "{}.{}",
+        name,
+        fingerprint.chars().take(8).collect::<String>()
+    );
     let host_name = format!("{}.local.", instance_name.replace(" ", "-"));
 
     let mut properties = HashMap::new();
@@ -94,9 +100,11 @@ pub fn start_advertising(name: &str, port: u16, fingerprint: &str) -> Result<(),
         &ip_str,
         port,
         Some(properties),
-    ).map_err(|e| format!("Failed to create service info: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to create service info: {}", e))?;
 
-    get_daemon().register(service_info.clone())
+    get_daemon()
+        .register(service_info.clone())
         .map_err(|e| format!("Failed to register mdns service: {}", e))?;
 
     *active = Some(service_info);
@@ -107,7 +115,8 @@ pub fn start_advertising(name: &str, port: u16, fingerprint: &str) -> Result<(),
 pub fn stop_advertising() -> Result<(), String> {
     let mut active = ACTIVE_SERVICE.lock().unwrap();
     if let Some(service_info) = active.take() {
-        get_daemon().unregister(&service_info.get_type())
+        get_daemon()
+            .unregister(&service_info.get_type())
             .map_err(|e| format!("Failed to unregister: {}", e))?;
         println!("Stopped advertising Janus device");
     }
@@ -121,18 +130,28 @@ pub fn start_browsing(app_handle: AppHandle) -> Result<(), String> {
     }
 
     let service_type = "_janus._tcp.local.";
-    let receiver = get_daemon().browse(service_type)
+    let receiver = get_daemon()
+        .browse(service_type)
         .map_err(|e| format!("Failed to browse mdns services: {}", e))?;
 
     let handle = tokio::spawn(async move {
         while let Ok(event) = receiver.recv_async().await {
             match event {
                 ServiceEvent::ServiceResolved(info) => {
-                    let name = info.get_property_val_str("dn").unwrap_or_else(|| info.get_fullname()).to_string();
-                    let fingerprint = info.get_property_val_str("fn").unwrap_or_default().to_string();
-                    let device_type = info.get_property_val_str("dt").unwrap_or("unknown").to_string();
+                    let name = info
+                        .get_property_val_str("dn")
+                        .unwrap_or_else(|| info.get_fullname())
+                        .to_string();
+                    let fingerprint = info
+                        .get_property_val_str("fn")
+                        .unwrap_or_default()
+                        .to_string();
+                    let device_type = info
+                        .get_property_val_str("dt")
+                        .unwrap_or("unknown")
+                        .to_string();
                     let txt_ip = info.get_property_val_str("ip").map(|s| s.to_string());
-                    
+
                     let ips = info.get_addresses();
                     let resolved_ip = txt_ip.or_else(|| {
                         ips.iter()
@@ -140,7 +159,7 @@ pub fn start_browsing(app_handle: AppHandle) -> Result<(), String> {
                             .or_else(|| ips.iter().next())
                             .map(|ip| ip.to_string())
                     });
-                    
+
                     if let Some(ip) = resolved_ip {
                         let device = DeviceInfo {
                             name: name.clone(),
@@ -152,8 +171,13 @@ pub fn start_browsing(app_handle: AppHandle) -> Result<(), String> {
                             username: None,
                             uuid: None,
                         };
-                        
-                        println!("Discovered device: {:?} at {}:{}", name, ip, info.get_port());
+
+                        println!(
+                            "Discovered device: {:?} at {}:{}",
+                            name,
+                            ip,
+                            info.get_port()
+                        );
                         let _ = app_handle.emit("device-discovered", device);
                     }
                 }

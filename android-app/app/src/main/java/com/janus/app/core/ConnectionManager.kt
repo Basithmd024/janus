@@ -1,6 +1,10 @@
 package com.janus.app.core
 
 import android.content.Context
+import android.content.Intent
+import android.os.Environment
+import android.util.Base64
+import java.io.File
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -26,6 +30,8 @@ class ConnectionManager(
     var onBinaryReceived: ((ByteArray) -> Unit)? = null
     var onRediscoveryRequested: (() -> Unit)? = null
     private val mediaManager = MediaManager(context)
+    private var activeIncomingFile: java.io.File? = null
+    private var activeIncomingFileStream: java.io.FileOutputStream? = null
     private val gson = Gson()
     private var webSocket: WebSocket? = null
     private val client = OkHttpClient()
@@ -358,6 +364,55 @@ class ConnectionManager(
                                 )
                             }.start()
                         }
+                    } else if (packet.type == "file.stream.start") {
+                        val fileName = packet.payload?.get("file_name")?.asString ?: "file_${System.currentTimeMillis()}"
+                        Thread {
+                            try {
+                                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                                val janusDir = File(downloadsDir, "Janus").apply { mkdirs() }
+                                val destFile = File(janusDir, fileName)
+                                activeIncomingFile = destFile
+                                activeIncomingFileStream = destFile.outputStream()
+                                Log.d("JanusConnection", "Started receiving file stream over WebSocket: $fileName")
+                            } catch (e: Exception) {
+                                Log.e("JanusConnection", "Error starting file stream", e)
+                            }
+                        }.start()
+                    } else if (packet.type == "file.stream.chunk") {
+                        val b64 = packet.payload?.get("data")?.asString
+                        if (b64 != null) {
+                            try {
+                                val bytes = Base64.decode(b64, Base64.NO_WRAP)
+                                activeIncomingFileStream?.write(bytes)
+                            } catch (e: Exception) {
+                                Log.e("JanusConnection", "Error writing file chunk", e)
+                            }
+                        }
+                    } else if (packet.type == "file.stream.done") {
+                        Thread {
+                            try {
+                                activeIncomingFileStream?.flush()
+                                activeIncomingFileStream?.close()
+                                activeIncomingFileStream = null
+
+                                val file = activeIncomingFile
+                                if (file != null && file.exists()) {
+                                    Log.d("JanusConnection", "File received completely over WebSocket: ${file.absolutePath} (${file.length()} bytes)")
+                                    android.media.MediaScannerConnection.scanFile(
+                                        context,
+                                        arrayOf(file.absolutePath),
+                                        null,
+                                        null
+                                    )
+
+                                    if (file.name.endsWith(".apk", ignoreCase = true)) {
+                                        promptApkInstallation(file)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.e("JanusConnection", "Error closing file stream", e)
+                            }
+                        }.start()
                     }
 
                     onPacketReceived(packet)
@@ -605,6 +660,24 @@ class ConnectionManager(
             )
             webSocket?.send(gson.toJson(packet))
             Log.d("JanusConnection", "Broadcasted updated device name: $devName")
+        }
+    }
+
+    private fun promptApkInstallation(file: java.io.File) {
+        try {
+            val apkUri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(installIntent)
+            Log.d("JanusConnection", "Prompted package installer for: ${file.name}")
+        } catch (e: Exception) {
+            Log.e("JanusConnection", "Failed to launch package installer", e)
         }
     }
 }
