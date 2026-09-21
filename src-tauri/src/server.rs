@@ -676,7 +676,6 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                     } else {
                         OpenOptions::new()
                             .create(true)
-                            .write(true)
                             .append(true)
                             .open(&file_path)
                     };
@@ -731,12 +730,7 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                 });
 
                 let file_path = "/Users/basith/Desktop/janus/feedback.json";
-                if let Ok(mut file) = OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .append(true)
-                    .open(file_path)
-                {
+                if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(file_path) {
                     let entry_str = format!(
                         "{}
 ",

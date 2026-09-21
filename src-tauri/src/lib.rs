@@ -125,7 +125,7 @@ async fn unpair_device(
         };
         if let Ok(json) = serde_json::to_string(&unpair_packet) {
             let clients = state.active_ws_clients.lock().unwrap();
-            for (_id, tx) in clients.iter() {
+            for tx in clients.values() {
                 let _ = tx.send(axum::extract::ws::Message::Text(json.clone()));
             }
         }
@@ -157,7 +157,7 @@ async fn stream_file_over_ws(
 
     let file_bytes = tokio::fs::read(path).await.map_err(|e| e.to_string())?;
     let chunk_size = 64 * 1024;
-    let total_chunks = ((file_bytes.len() + chunk_size - 1) / chunk_size).max(1);
+    let total_chunks = file_bytes.len().div_ceil(chunk_size).max(1);
 
     let start_packet = crate::protocol::Packet {
         r#type: "file.stream.start".to_string(),
@@ -435,7 +435,7 @@ async fn send_notification_reply(
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -464,7 +464,7 @@ async fn dismiss_remote_notification(
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -493,7 +493,7 @@ async fn make_phone_call(
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -518,7 +518,7 @@ async fn answer_phone_call(state: State<'_, SharedState>) -> Result<String, Stri
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -543,7 +543,7 @@ async fn hangup_phone_call(state: State<'_, SharedState>) -> Result<String, Stri
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -572,7 +572,7 @@ async fn toggle_call_speaker(
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -598,7 +598,7 @@ async fn toggle_call_mute(state: State<'_, SharedState>, muted: bool) -> Result<
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -624,7 +624,7 @@ async fn send_call_dtmf(state: State<'_, SharedState>, digit: String) -> Result<
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -649,7 +649,7 @@ async fn take_phone_screenshot(state: State<'_, SharedState>) -> Result<String, 
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -674,7 +674,7 @@ async fn start_screencast(state: State<'_, SharedState>) -> Result<String, Strin
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -699,7 +699,7 @@ async fn stop_screencast(state: State<'_, SharedState>) -> Result<String, String
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -730,7 +730,7 @@ async fn inject_remote_click(
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -767,7 +767,7 @@ async fn inject_remote_swipe(
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -793,7 +793,7 @@ async fn inject_remote_key(state: State<'_, SharedState>, key: String) -> Result
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -809,7 +809,7 @@ async fn send_audio_frame(state: State<'_, SharedState>, bytes: Vec<u8>) -> Resu
     payload.extend_from_slice(&bytes);
 
     let clients = state.active_ws_clients.lock().unwrap();
-    for (_id, tx) in clients.iter() {
+    for tx in clients.values() {
         let msg = axum::extract::ws::Message::Binary(payload.clone());
         let _ = tx.send(msg);
     }
@@ -831,7 +831,7 @@ async fn sync_calls(state: State<'_, SharedState>) -> Result<String, String> {
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -854,7 +854,7 @@ async fn sync_sms(state: State<'_, SharedState>) -> Result<String, String> {
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -902,7 +902,7 @@ async fn request_device_status(state: State<'_, SharedState>) -> Result<(), Stri
         payload: serde_json::json!({}),
     };
     if let Ok(text) = serde_json::to_string(&packet) {
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let _ = tx.send(axum::extract::ws::Message::Text(text.clone()));
         }
     }
@@ -1076,7 +1076,6 @@ async fn submit_feedback(
 
     let mut file = OpenOptions::new()
         .create(true)
-        .write(true)
         .append(true)
         .open(file_path)
         .map_err(|e| e.to_string())?;
@@ -1270,7 +1269,7 @@ async fn request_media_list(
         if clients.is_empty() {
             return Err("No connected device to request media from".to_string());
         }
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }
@@ -1308,7 +1307,7 @@ async fn request_media_fetch(
         if clients.is_empty() {
             return Err("No connected device to fetch media from".to_string());
         }
-        for (_id, tx) in clients.iter() {
+        for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());
             let _ = tx.send(msg);
         }

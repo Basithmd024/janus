@@ -116,7 +116,7 @@ pub fn stop_advertising() -> Result<(), String> {
     let mut active = ACTIVE_SERVICE.lock().unwrap();
     if let Some(service_info) = active.take() {
         get_daemon()
-            .unregister(&service_info.get_type())
+            .unregister(service_info.get_type())
             .map_err(|e| format!("Failed to unregister: {}", e))?;
         println!("Stopped advertising Janus device");
     }

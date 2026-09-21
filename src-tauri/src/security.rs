@@ -94,7 +94,7 @@ fn compute_fingerprint_from_pem(cert_pem: &str) -> Result<String, String> {
     let der = parsed_pem.contents();
 
     // Compute SHA-256 fingerprint
-    let hash = digest::digest(&digest::SHA256, &der);
+    let hash = digest::digest(&digest::SHA256, der);
     let hex_fingerprint = hash
         .as_ref()
         .iter()
