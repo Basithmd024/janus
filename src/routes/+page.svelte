@@ -213,6 +213,12 @@
   let dialerNumber = $state<string>("");
   let callDuration = $state<number>(0);
   let callTimerInterval: ReturnType<typeof setInterval> | null = null;
+  let isCallSpeakerOn = $state<boolean>(true);
+  let isCallMuted = $state<boolean>(false);
+  let showInCallKeypad = $state<boolean>(false);
+  let inCallDtmfDigits = $state<string>("");
+  let mediaFetchTimer: any = null;
+  let isTakingScreenshot = $state<boolean>(false);
   let currentLocalTime = $state<string>("");
   let timeInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -533,11 +539,39 @@
   async function fetchMediaList(category: string = mediaCategory) {
     mediaCategory = category;
     isLoadingMedia = true;
+    if (mediaFetchTimer) clearTimeout(mediaFetchTimer);
+    // Safety 5s fallback timeout to prevent stuck 'Loading...' button
+    mediaFetchTimer = setTimeout(() => {
+      if (isLoadingMedia) {
+        isLoadingMedia = false;
+        if (mediaItems.length === 0) {
+          showToast("Media request timed out. Check phone connection and retry.", "info");
+        }
+      }
+    }, 5000);
+
     try {
       await invoke("request_media_list", { category, limit: 100, offset: 0 });
     } catch (e: any) {
       isLoadingMedia = false;
+      if (mediaFetchTimer) clearTimeout(mediaFetchTimer);
       console.warn("request_media_list error:", e);
+    }
+  }
+
+  async function takePhoneScreenshot() {
+    if (isTakingScreenshot) return;
+    isTakingScreenshot = true;
+    try {
+      await invoke("take_phone_screenshot");
+      showToast("Screenshot captured on phone!", "success");
+      setTimeout(() => {
+        isTakingScreenshot = false;
+        fetchMediaList("screenshots");
+      }, 1500);
+    } catch (e: any) {
+      isTakingScreenshot = false;
+      showToast("Failed to take screenshot: " + e, "error");
     }
   }
 
@@ -991,9 +1025,12 @@
     try {
       await invoke("answer_phone_call");
       callState = "offhook";
+      isCallSpeakerOn = true;
+      isCallMuted = false;
+      inCallDtmfDigits = "";
       callDuration = 0;
       callTimerInterval = setInterval(() => { callDuration += 1; }, 1000);
-      showToast("Call answered", "success");
+      showToast("Call answered on Speakerphone", "success");
       startMicCapture();
     } catch (e) {
       showToast("Failed to answer call: " + e, "error");
@@ -1005,12 +1042,43 @@
       await invoke("hangup_phone_call");
       callState = "idle";
       activeCall = null;
+      showInCallKeypad = false;
+      inCallDtmfDigits = "";
       if (callTimerInterval) { clearInterval(callTimerInterval); callTimerInterval = null; }
       callDuration = 0;
       showToast("Call ended", "info");
       stopMicCapture();
     } catch (e) {
       showToast("Failed to end call: " + e, "error");
+    }
+  }
+
+  async function toggleCallSpeaker(enabled: boolean) {
+    try {
+      await invoke("toggle_call_speaker", { enabled });
+      isCallSpeakerOn = enabled;
+      showToast(enabled ? "Phone Speakerphone ON" : "Phone Speakerphone OFF", "info");
+    } catch (e) {
+      showToast("Failed to toggle speakerphone: " + e, "error");
+    }
+  }
+
+  async function toggleCallMute(muted: boolean) {
+    try {
+      await invoke("toggle_call_mute", { muted });
+      isCallMuted = muted;
+      showToast(muted ? "Microphone Muted" : "Microphone Active", "info");
+    } catch (e) {
+      showToast("Failed to toggle mute: " + e, "error");
+    }
+  }
+
+  async function sendCallDtmf(digit: string) {
+    inCallDtmfDigits += digit;
+    try {
+      await invoke("send_call_dtmf", { digit });
+    } catch (e) {
+      console.warn("Failed to send DTMF tone:", e);
     }
   }
 
@@ -1419,6 +1487,7 @@
 
     // Media browser listeners
     const unlistenMediaList = await listen<any>("media-list-received", (event) => {
+      if (mediaFetchTimer) clearTimeout(mediaFetchTimer);
       isLoadingMedia = false;
       if (event.payload && event.payload.items) {
         mediaItems = event.payload.items;
@@ -1486,14 +1555,18 @@
     const unlistenCallState = await listen<any>("call-state", (event) => {
       const payload = event.payload;
       callState = payload.state;
+      if (payload.speaker_on !== undefined) isCallSpeakerOn = payload.speaker_on;
+      if (payload.is_muted !== undefined) isCallMuted = payload.is_muted;
       if (callState === "offhook") {
-        callDuration = 0;
         if (!callTimerInterval) {
+          callDuration = 0;
           callTimerInterval = setInterval(() => { callDuration += 1; }, 1000);
         }
         startMicCapture();
       } else if (callState === "idle") {
         activeCall = null;
+        showInCallKeypad = false;
+        inCallDtmfDigits = "";
         if (callTimerInterval) { clearInterval(callTimerInterval); callTimerInterval = null; }
         callDuration = 0;
         stopMicCapture();
@@ -2435,6 +2508,10 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class={isLoadingMedia ? "spin" : ""}><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
               <span>{isLoadingMedia ? "Loading..." : "Refresh"}</span>
             </button>
+            <button class="btn btn-secondary btn-sm" onclick={takePhoneScreenshot} disabled={isTakingScreenshot} title="Capture phone screen now">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M8.5 8.5h.01"/></svg>
+              <span>{isTakingScreenshot ? "Capturing..." : "Capture Phone"}</span>
+            </button>
             <button class="btn btn-secondary btn-sm" onclick={openDownloadsFolder}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
               <span>Downloads Folder</span>
@@ -2446,6 +2523,7 @@
           <div class="media-category-pills">
             <button class="cat-pill {mediaCategory === 'all' ? 'active' : ''}" onclick={() => fetchMediaList('all')}>All</button>
             <button class="cat-pill {mediaCategory === 'photos' ? 'active' : ''}" onclick={() => fetchMediaList('photos')}>Photos</button>
+            <button class="cat-pill {mediaCategory === 'screenshots' ? 'active' : ''}" onclick={() => fetchMediaList('screenshots')}>Screenshots</button>
             <button class="cat-pill {mediaCategory === 'videos' ? 'active' : ''}" onclick={() => fetchMediaList('videos')}>Videos</button>
             <button class="cat-pill {mediaCategory === 'downloads' ? 'active' : ''}" onclick={() => fetchMediaList('downloads')}>Downloads &amp; Docs</button>
           </div>
@@ -2507,6 +2585,11 @@
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                       VIDEO
                     </span>
+                  {:else if item.category === 'screenshot'}
+                    <span class="screenshot-badge">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                      SCREENSHOT
+                    </span>
                   {/if}
 
                   <div class="media-overlay">
@@ -2552,6 +2635,34 @@
         </div>
         
         <div class="dialer-workspace">
+          {#if callState === "offhook"}
+            <div class="in-call-dialer-card">
+              <div class="in-call-badge">
+                <span class="pulsing-call-dot"></span>
+                <span>Active Call in Progress</span>
+              </div>
+              <h3>{activeCall ? activeCall.callerName : "Connected Call"}</h3>
+              <p class="in-call-sub">{activeCall ? activeCall.phoneNumber : ""} • {formatCallDuration(callDuration)}</p>
+              
+              <div class="in-call-quick-actions">
+                <button class="btn btn-sm {isCallSpeakerOn ? 'btn-primary' : 'btn-secondary'}" onclick={() => toggleCallSpeaker(!isCallSpeakerOn)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                  <span>Speaker: {isCallSpeakerOn ? "ON" : "OFF"}</span>
+                </button>
+                <button class="btn btn-sm {isCallMuted ? 'btn-danger' : 'btn-secondary'}" onclick={() => toggleCallMute(!isCallMuted)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                  <span>{isCallMuted ? "Unmute Mic" : "Mute Mic"}</span>
+                </button>
+                <button class="btn btn-sm btn-danger" onclick={declineCall}>
+                  <span>End Call</span>
+                </button>
+              </div>
+              <div class="in-call-hint">
+                <small>Use the dial pad below to send DTMF tones to IVR phone menus.</small>
+              </div>
+            </div>
+          {/if}
+
           <div class="dialer-widget">
             <input
               type="text"
@@ -2574,7 +2685,7 @@
                 {key: '0', sub: '+'},
                 {key: '#', sub: ''}
               ] as item}
-                <button class="dial-btn" onclick={() => dialerNumber += item.key}>
+                <button class="dial-btn" onclick={() => { dialerNumber += item.key; if (callState === 'offhook') sendCallDtmf(item.key); }}>
                   <span class="dial-num">{item.key}</span>
                   {#if item.sub}
                     <span class="dial-sub">{item.sub}</span>
@@ -3005,6 +3116,7 @@
         <div class="call-details">
           <span class="caller-name">{activeCall.callerName}</span>
           <span class="caller-number">{activeCall.phoneNumber}</span>
+          <span class="call-route-hint">Answers on Speakerphone &amp; bridges to Mac</span>
         </div>
         <div class="call-controls">
           <button class="call-control-btn answer" onclick={answerCall}>
@@ -3018,12 +3130,109 @@
     </div>
   {/if}
 
-  <!-- Active Call Banner -->
+  <!-- Active Call Control Center HUD -->
   {#if callState === "offhook"}
-    <div class="call-banner">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" stroke="currentColor" stroke-width="1.5"/></svg>
-      <span>Active Call — {formatCallDuration(callDuration)}</span>
-      <button class="btn btn-sm btn-ghost-danger" onclick={declineCall}>End Call</button>
+    <div class="active-call-hud">
+      <div class="call-hud-info">
+        <div class="call-live-indicator"></div>
+        <div class="call-hud-caller">
+          <span class="hud-caller-name">{activeCall ? activeCall.callerName : "Active Phone Call"}</span>
+          <span class="hud-caller-number">{activeCall ? activeCall.phoneNumber : ""} • {formatCallDuration(callDuration)}</span>
+        </div>
+      </div>
+
+      <div class="call-hud-controls">
+        <!-- Speakerphone Toggle -->
+        <button 
+          class="hud-btn {isCallSpeakerOn ? 'active' : ''}" 
+          onclick={() => toggleCallSpeaker(!isCallSpeakerOn)}
+          title={isCallSpeakerOn ? "Phone Speakerphone ON (Click to toggle)" : "Phone Speakerphone OFF (Click to toggle)"}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+            {#if isCallSpeakerOn}
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            {:else}
+              <line x1="23" y1="9" x2="17" y2="15"/>
+              <line x1="17" y1="9" x2="23" y2="15"/>
+            {/if}
+          </svg>
+          <span>Speaker: {isCallSpeakerOn ? "ON" : "OFF"}</span>
+        </button>
+
+        <!-- Mic Mute Toggle -->
+        <button 
+          class="hud-btn {isCallMuted ? 'muted-active' : ''}" 
+          onclick={() => toggleCallMute(!isCallMuted)}
+          title={isCallMuted ? "Microphone is Muted (Click to unmute)" : "Microphone is Active (Click to mute)"}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            {#if isCallMuted}
+              <line x1="1" y1="1" x2="23" y2="23"/>
+              <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
+              <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            {:else}
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            {/if}
+          </svg>
+          <span>{isCallMuted ? "Muted" : "Mute"}</span>
+        </button>
+
+        <!-- Keypad Toggle (DTMF) -->
+        <button 
+          class="hud-btn {showInCallKeypad ? 'active' : ''}" 
+          onclick={() => showInCallKeypad = !showInCallKeypad}
+          title="Toggle In-Call Keypad (0-9, *, #)"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8" cy="8" r="1"/>
+            <circle cx="12" cy="8" r="1"/>
+            <circle cx="16" cy="8" r="1"/>
+            <circle cx="8" cy="12" r="1"/>
+            <circle cx="12" cy="12" r="1"/>
+            <circle cx="16" cy="12" r="1"/>
+            <circle cx="8" cy="16" r="1"/>
+            <circle cx="12" cy="16" r="1"/>
+            <circle cx="16" cy="16" r="1"/>
+          </svg>
+          <span>Keypad</span>
+        </button>
+
+        <!-- End Call Button -->
+        <button class="hud-end-call" onclick={declineCall}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/>
+            <line x1="23" y1="1" x2="1" y2="23"/>
+          </svg>
+          <span>End Call</span>
+        </button>
+      </div>
+
+      <!-- In-Call DTMF Keypad Dropdown -->
+      {#if showInCallKeypad}
+        <div class="hud-keypad-popover">
+          <div class="hud-keypad-header">
+            <span>DTMF Keypad</span>
+            <button class="close-hud-keypad" onclick={() => showInCallKeypad = false}>✕</button>
+          </div>
+          {#if inCallDtmfDigits}
+            <div class="hud-dtmf-display">{inCallDtmfDigits}</div>
+          {/if}
+          <div class="hud-dtmf-grid">
+            {#each ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'] as key}
+              <button class="hud-dtmf-key" onclick={() => sendCallDtmf(key)}>
+                {key}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -6003,6 +6212,250 @@
     color: var(--success);
     font-weight: 600;
   }
+
+  /* ════════════════════════════════════════════════
+     IN-CALL CONTROL HUD & SCREENSHOTS STYLING
+     ════════════════════════════════════════════════ */
+  .active-call-hud {
+    position: fixed;
+    top: 0;
+    left: 260px;
+    right: 0;
+    background: rgba(15, 23, 42, 0.96);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 0.65rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 4500;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .call-hud-info {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+  }
+  .call-live-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 10px #10b981;
+    animation: pulseGlow 1.5s infinite;
+  }
+  @keyframes pulseGlow {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(1.3); }
+  }
+  .call-hud-caller {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .hud-caller-name {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #f8fafc;
+  }
+  .hud-caller-number {
+    font-size: 0.76rem;
+    color: #94a3b8;
+    font-family: monospace;
+  }
+  .call-hud-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .hud-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.85rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.08);
+    color: #cbd5e1;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    transition: all 0.2s ease;
+  }
+  .hud-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    transform: translateY(-1px);
+  }
+  .hud-btn.active {
+    background: #2563eb;
+    color: #ffffff;
+    border-color: #3b82f6;
+    box-shadow: 0 0 12px rgba(37, 99, 235, 0.4);
+  }
+  .hud-btn.muted-active {
+    background: #dc2626;
+    color: #ffffff;
+    border-color: #ef4444;
+    box-shadow: 0 0 12px rgba(220, 38, 38, 0.4);
+  }
+  .hud-end-call {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: #ef4444;
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.8rem;
+    padding: 0.45rem 0.95rem;
+    border-radius: var(--radius-sm);
+    box-shadow: 0 2px 10px rgba(239, 68, 68, 0.35);
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .hud-end-call:hover {
+    background: #dc2626;
+    transform: translateY(-1px);
+  }
+  .hud-keypad-popover {
+    position: absolute;
+    top: 100%;
+    right: 1.5rem;
+    margin-top: 0.5rem;
+    width: 200px;
+    background: #0f172a;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: var(--radius-md);
+    padding: 0.75rem;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(20px);
+    z-index: 4600;
+    animation: toastIn 0.2s ease;
+  }
+  .hud-keypad-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #94a3b8;
+    margin-bottom: 0.5rem;
+  }
+  .close-hud-keypad {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .close-hud-keypad:hover { color: #fff; }
+  .hud-dtmf-display {
+    background: rgba(255, 255, 255, 0.06);
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.95rem;
+    color: #38bdf8;
+    text-align: center;
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hud-dtmf-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.35rem;
+  }
+  .hud-dtmf-key {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #f1f5f9;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 0.5rem 0;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .hud-dtmf-key:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
+  }
+  .hud-dtmf-key:active {
+    background: #2563eb;
+    transform: scale(0.95);
+  }
+  .screenshot-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(139, 92, 246, 0.9);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    letter-spacing: 0.5px;
+    z-index: 2;
+  }
+  .call-route-hint {
+    display: block;
+    font-size: 0.76rem;
+    color: var(--accent);
+    margin-top: 4px;
+  }
+  .in-call-dialer-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.1);
+  }
+  .in-call-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--success);
+    margin-bottom: 0.5rem;
+    background: var(--success-dim);
+    padding: 3px 8px;
+    border-radius: 20px;
+  }
+  .pulsing-call-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    animation: pulseGlow 1.5s infinite;
+  }
+  .in-call-sub {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+    font-family: monospace;
+  }
+  .in-call-quick-actions {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+  .in-call-hint {
+    color: var(--text-muted);
+  }
+
 </style>
 
 

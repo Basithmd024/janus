@@ -431,6 +431,120 @@ async fn hangup_phone_call(
 }
 
 #[tauri::command]
+async fn toggle_call_speaker(
+    state: State<'_, SharedState>,
+    enabled: bool,
+) -> Result<String, String> {
+    let packet = crate::protocol::Packet {
+        r#type: "call.action".to_string(),
+        id: uuid::Uuid::new_v4().to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({
+            "action": "speaker",
+            "enabled": enabled
+        }),
+    };
+
+    if let Ok(json) = serde_json::to_string(&packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        for (_id, tx) in clients.iter() {
+            let msg = axum::extract::ws::Message::Text(json.clone());
+            let _ = tx.send(msg);
+        }
+    }
+
+    Ok("Call action speaker sent".to_string())
+}
+
+#[tauri::command]
+async fn toggle_call_mute(
+    state: State<'_, SharedState>,
+    muted: bool,
+) -> Result<String, String> {
+    let packet = crate::protocol::Packet {
+        r#type: "call.action".to_string(),
+        id: uuid::Uuid::new_v4().to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({
+            "action": "mute",
+            "muted": muted
+        }),
+    };
+
+    if let Ok(json) = serde_json::to_string(&packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        for (_id, tx) in clients.iter() {
+            let msg = axum::extract::ws::Message::Text(json.clone());
+            let _ = tx.send(msg);
+        }
+    }
+
+    Ok("Call action mute sent".to_string())
+}
+
+#[tauri::command]
+async fn send_call_dtmf(
+    state: State<'_, SharedState>,
+    digit: String,
+) -> Result<String, String> {
+    let packet = crate::protocol::Packet {
+        r#type: "call.action".to_string(),
+        id: uuid::Uuid::new_v4().to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({
+            "action": "dtmf",
+            "digit": digit
+        }),
+    };
+
+    if let Ok(json) = serde_json::to_string(&packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        for (_id, tx) in clients.iter() {
+            let msg = axum::extract::ws::Message::Text(json.clone());
+            let _ = tx.send(msg);
+        }
+    }
+
+    Ok("Call action dtmf sent".to_string())
+}
+
+#[tauri::command]
+async fn take_phone_screenshot(
+    state: State<'_, SharedState>,
+) -> Result<String, String> {
+    let packet = crate::protocol::Packet {
+        r#type: "screenshot.action".to_string(),
+        id: uuid::Uuid::new_v4().to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({
+            "action": "capture"
+        }),
+    };
+
+    if let Ok(json) = serde_json::to_string(&packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        for (_id, tx) in clients.iter() {
+            let msg = axum::extract::ws::Message::Text(json.clone());
+            let _ = tx.send(msg);
+        }
+    }
+
+    Ok("Screenshot action capture sent".to_string())
+}
+
+#[tauri::command]
 async fn start_screencast(
     state: State<'_, SharedState>,
 ) -> Result<String, String> {
@@ -1284,6 +1398,10 @@ pub fn run() {
             make_phone_call,
             answer_phone_call,
             hangup_phone_call,
+            toggle_call_speaker,
+            toggle_call_mute,
+            send_call_dtmf,
+            take_phone_screenshot,
             start_screencast,
             stop_screencast,
             inject_remote_click,

@@ -35,21 +35,44 @@ class MediaManager(private val context: Context) {
         try {
             val resolver = context.contentResolver
 
-            // 1. Scan Images
-            if (category == "all" || category == "image" || category == "photos") {
+            // 1. Scan Images & Screenshots
+            val isScreenshotQuery = category.equals("screenshot", ignoreCase = true) || category.equals("screenshots", ignoreCase = true)
+            val isPhotoQuery = category.equals("photo", ignoreCase = true) || category.equals("photos", ignoreCase = true)
+            val isImageQuery = category == "all" || category.equals("image", ignoreCase = true) || isPhotoQuery || isScreenshotQuery
+
+            if (isImageQuery) {
                 val imageProjection = arrayOf(
                     MediaStore.Images.Media._ID,
                     MediaStore.Images.Media.DISPLAY_NAME,
                     MediaStore.Images.Media.SIZE,
                     MediaStore.Images.Media.DATE_MODIFIED,
-                    MediaStore.Images.Media.MIME_TYPE
+                    MediaStore.Images.Media.MIME_TYPE,
+                    MediaStore.Images.Media.BUCKET_DISPLAY_NAME
                 )
                 val sortOrder = "${MediaStore.Images.Media.DATE_MODIFIED} DESC LIMIT $limit OFFSET $offset"
+
+                var selection: String? = null
+                var selectionArgs: Array<String>? = null
+
+                if (isScreenshotQuery) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        selection = "(${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} = ? OR ${MediaStore.Images.Media.DISPLAY_NAME} LIKE ? OR ${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?)"
+                        selectionArgs = arrayOf("Screenshots", "%Screenshot%", "%Screenshots%")
+                    } else {
+                        selection = "(${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} = ? OR ${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?)"
+                        selectionArgs = arrayOf("Screenshots", "%Screenshot%")
+                    }
+                } else if (isPhotoQuery) {
+                    // Filter out screenshots from pure photos tab if possible
+                    selection = "(${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} != ? AND ${MediaStore.Images.Media.DISPLAY_NAME} NOT LIKE ?)"
+                    selectionArgs = arrayOf("Screenshots", "%Screenshot%")
+                }
+
                 resolver.query(
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     imageProjection,
-                    null,
-                    null,
+                    selection,
+                    selectionArgs,
                     sortOrder
                 )?.use { cursor ->
                     val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
@@ -57,6 +80,7 @@ class MediaManager(private val context: Context) {
                     val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
                     val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
                     val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.MIME_TYPE)
+                    val bucketCol = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
 
                     var count = 0
                     while (cursor.moveToNext() && count < limit) {
@@ -65,6 +89,12 @@ class MediaManager(private val context: Context) {
                         val size = cursor.getLong(sizeCol)
                         val dateModified = cursor.getLong(dateCol)
                         val mime = cursor.getString(mimeCol) ?: "image/jpeg"
+                        val bucketName = if (bucketCol != -1) cursor.getString(bucketCol) ?: "" else ""
+                        val isScreenshot = bucketName.equals("Screenshots", ignoreCase = true) ||
+                                           name.contains("Screenshot", ignoreCase = true) ||
+                                           name.contains("Screen_Shot", ignoreCase = true)
+
+                        val itemCategory = if (isScreenshot) "screenshot" else "image"
                         val contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
 
                         val item = JsonObject().apply {
@@ -73,7 +103,7 @@ class MediaManager(private val context: Context) {
                             addProperty("size", size)
                             addProperty("date_modified", dateModified)
                             addProperty("mime_type", mime)
-                            addProperty("category", "image")
+                            addProperty("category", itemCategory)
                         }
 
                         // Generate small thumbnail for fast preview

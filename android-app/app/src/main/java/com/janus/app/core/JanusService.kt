@@ -135,7 +135,10 @@ class JanusService : Service() {
                 audioBridge?.start()
             }
             android.telephony.TelephonyManager.CALL_STATE_OFFHOOK -> {
+                val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
                 payload.addProperty("state", "offhook")
+                payload.addProperty("speaker_on", audioManager.isSpeakerphoneOn)
+                payload.addProperty("is_muted", audioManager.isMicrophoneMute)
                 val packet = Packet(
                     type = "call.state",
                     id = java.util.UUID.randomUUID().toString(),
@@ -391,7 +394,22 @@ class JanusService : Service() {
                     "hangup" -> {
                         hangupActiveCall()
                     }
+                    "speaker" -> {
+                        val enabled = packet.payload.get("enabled")?.asBoolean ?: true
+                        setSpeakerphone(enabled)
+                    }
+                    "mute" -> {
+                        val muted = packet.payload.get("muted")?.asBoolean ?: true
+                        setMicrophoneMute(muted)
+                    }
+                    "dtmf" -> {
+                        val digit = packet.payload.get("digit")?.asString ?: return
+                        playDtmfTone(digit)
+                    }
                 }
+            }
+            "screenshot.action" -> {
+                takePhoneScreenshot()
             }
             "screencast.action" -> {
                 val action = packet.payload.get("action")?.asString ?: return
@@ -524,10 +542,101 @@ class JanusService : Service() {
                 } catch (e: Exception) {
                     Log.e("JanusService", "Error answering call", e)
                 }
+
+                // MOB-CALL: Auto-enable Speakerphone on remote answer from Mac
+                // Allows user to speak and listen freely from MacBook without needing Bluetooth
+                try {
+                    val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                    audioManager.mode = android.media.AudioManager.MODE_IN_COMMUNICATION
+                    audioManager.isSpeakerphoneOn = true
+                    Log.d("JanusService", "Auto-enabled speakerphone for remote call answer")
+                    sendCallControlStatus(speakerOn = true, isMuted = audioManager.isMicrophoneMute)
+                } catch (e: Exception) {
+                    Log.w("JanusService", "Failed to set speakerphone on answer", e)
+                }
             } else {
                 Log.w("JanusService", "ANSWER_PHONE_CALLS permission not granted")
             }
         }
+    }
+
+    fun setSpeakerphone(enabled: Boolean) {
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            audioManager.mode = android.media.AudioManager.MODE_IN_COMMUNICATION
+            audioManager.isSpeakerphoneOn = enabled
+            Log.d("JanusService", "Speakerphone toggled to: $enabled")
+            sendCallControlStatus(speakerOn = enabled, isMuted = audioManager.isMicrophoneMute)
+        } catch (e: Exception) {
+            Log.e("JanusService", "Error setting speakerphone", e)
+        }
+    }
+
+    fun setMicrophoneMute(muted: Boolean) {
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            audioManager.isMicrophoneMute = muted
+            Log.d("JanusService", "Microphone mute toggled to: $muted")
+            sendCallControlStatus(speakerOn = audioManager.isSpeakerphoneOn, isMuted = muted)
+        } catch (e: Exception) {
+            Log.e("JanusService", "Error setting mic mute", e)
+        }
+    }
+
+    private var toneGenerator: android.media.ToneGenerator? = null
+
+    fun playDtmfTone(digit: String) {
+        try {
+            if (toneGenerator == null) {
+                toneGenerator = android.media.ToneGenerator(android.media.AudioManager.STREAM_VOICE_CALL, 100)
+            }
+            val tone = when (digit.trim().uppercase()) {
+                "0" -> android.media.ToneGenerator.TONE_DTMF_0
+                "1" -> android.media.ToneGenerator.TONE_DTMF_1
+                "2" -> android.media.ToneGenerator.TONE_DTMF_2
+                "3" -> android.media.ToneGenerator.TONE_DTMF_3
+                "4" -> android.media.ToneGenerator.TONE_DTMF_4
+                "5" -> android.media.ToneGenerator.TONE_DTMF_5
+                "6" -> android.media.ToneGenerator.TONE_DTMF_6
+                "7" -> android.media.ToneGenerator.TONE_DTMF_7
+                "8" -> android.media.ToneGenerator.TONE_DTMF_8
+                "9" -> android.media.ToneGenerator.TONE_DTMF_9
+                "*" -> android.media.ToneGenerator.TONE_DTMF_S
+                "#" -> android.media.ToneGenerator.TONE_DTMF_P
+                else -> null
+            }
+            if (tone != null) {
+                toneGenerator?.startTone(tone, 200)
+                Log.d("JanusService", "Played DTMF tone: $digit")
+            }
+        } catch (e: Exception) {
+            Log.e("JanusService", "Error playing DTMF tone for $digit", e)
+        }
+    }
+
+    fun takePhoneScreenshot() {
+        val acc = JanusAccessibilityService.instance
+        if (acc != null) {
+            val success = acc.takeScreenshot()
+            Log.d("JanusService", "Remote screenshot triggered: $success")
+        } else {
+            Log.w("JanusService", "JanusAccessibilityService not connected")
+        }
+    }
+
+    fun sendCallControlStatus(speakerOn: Boolean, isMuted: Boolean) {
+        val payload = JsonObject().apply {
+            addProperty("state", "offhook")
+            addProperty("speaker_on", speakerOn)
+            addProperty("is_muted", isMuted)
+        }
+        val packet = Packet(
+            type = "call.state",
+            id = java.util.UUID.randomUUID().toString(),
+            timestamp = System.currentTimeMillis() / 1000,
+            payload = payload
+        )
+        connectionManager?.sendPacket(packet)
     }
 
     private fun hangupActiveCall() {
@@ -602,6 +711,10 @@ class JanusService : Service() {
 
         audioBridge?.stop()
         audioBridge = null
+        try {
+            toneGenerator?.release()
+            toneGenerator = null
+        } catch (_: Exception) {}
 
         // Unregister phone state receiver
         try {

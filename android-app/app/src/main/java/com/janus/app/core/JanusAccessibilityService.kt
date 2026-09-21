@@ -61,4 +61,14 @@ class JanusAccessibilityService : AccessibilityService() {
         Log.d("JanusAccessibility", "Performing global action: $action")
         return performGlobalAction(action)
     }
+
+    fun takeScreenshot(): Boolean {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            Log.d("JanusAccessibility", "Triggering native screenshot via GLOBAL_ACTION_TAKE_SCREENSHOT")
+            performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
+        } else {
+            Log.w("JanusAccessibility", "Screenshot requires Android 9 (API 28)+")
+            false
+        }
+    }
 }

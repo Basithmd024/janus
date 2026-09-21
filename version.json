@@ -1,17 +1,19 @@
 {
-  "version": "2.1.0",
+  "version": "2.2.0",
   "min_version": "1.0.0",
   "release_date": "2026-09-21",
-  "title": "Janus v2.1.0 — Phone Media Browsing, Auto-Start & Auto-Connect Optimization",
+  "title": "Janus v2.2.0 \u2014 Full In-Call Management from Mac & Phone Screenshots",
   "notes": [
-    "Complete Phone Media Browsing: Browse, preview, and download photos, videos, and documents directly from Mac",
-    "Auto-Start: Android starts on boot (BootReceiver), Mac launches at login (tauri-plugin-autostart)",
-    "Auto-Connect Optimization: Accelerated 1s reconnect + dynamic mDNS rediscovery on network change",
-    "Zero-touch background reconnect when switching between Wi-Fi and Hotspot"
+    "Full In-Call Management from Mac: Answer remotely with auto-speakerphone activation (works seamlessly without Bluetooth)",
+    "Hardware In-Call Controls: Toggle phone speakerphone, mute/unmute mic, and send DTMF keypad digits from Mac",
+    "Live In-Call HUD: Active call banner with caller name, number, duration, and control buttons",
+    "Dedicated Screenshots Tab: Browse, preview, and download phone screenshots from Media & Files tab",
+    "Capture Phone Screenshot: 1-click button on Mac to capture live screenshot on phone",
+    "Fix: Added 5s safety timeout to prevent stuck Loading state in Media browser"
   ],
   "downloads": {
-    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v2.1.0/app-debug.apk",
-    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v2.1.0/Janus.dmg",
-    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v2.1.0"
+    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v2.2.0/app-debug.apk",
+    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v2.2.0/Janus.dmg",
+    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v2.2.0"
   }
 }
