@@ -30,6 +30,7 @@ class ConnectionManager(
     var onBinaryReceived: ((ByteArray) -> Unit)? = null
     var onRediscoveryRequested: (() -> Unit)? = null
     private val mediaManager = MediaManager(context)
+    private val fileStreamLock = Any()
     private var activeIncomingFile: java.io.File? = null
     private var activeIncomingFileStream: java.io.FileOutputStream? = null
     private val gson = Gson()
@@ -366,53 +367,60 @@ class ConnectionManager(
                         }
                     } else if (packet.type == "file.stream.start") {
                         val fileName = packet.payload?.get("file_name")?.asString ?: "file_${System.currentTimeMillis()}"
-                        Thread {
+                        synchronized(fileStreamLock) {
                             try {
                                 val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                                 val janusDir = File(downloadsDir, "Janus").apply { mkdirs() }
                                 val destFile = File(janusDir, fileName)
+                                try { activeIncomingFileStream?.close() } catch (_: Exception) {}
                                 activeIncomingFile = destFile
                                 activeIncomingFileStream = destFile.outputStream()
                                 Log.d("JanusConnection", "Started receiving file stream over WebSocket: $fileName")
                             } catch (e: Exception) {
                                 Log.e("JanusConnection", "Error starting file stream", e)
                             }
-                        }.start()
+                        }
                     } else if (packet.type == "file.stream.chunk") {
                         val b64 = packet.payload?.get("data")?.asString
                         if (b64 != null) {
-                            try {
-                                val bytes = Base64.decode(b64, Base64.NO_WRAP)
-                                activeIncomingFileStream?.write(bytes)
-                            } catch (e: Exception) {
-                                Log.e("JanusConnection", "Error writing file chunk", e)
+                            synchronized(fileStreamLock) {
+                                try {
+                                    val bytes = Base64.decode(b64, Base64.NO_WRAP)
+                                    activeIncomingFileStream?.write(bytes)
+                                } catch (e: Exception) {
+                                    Log.e("JanusConnection", "Error writing file chunk", e)
+                                }
                             }
                         }
                     } else if (packet.type == "file.stream.done") {
-                        Thread {
+                        var completedFile: File? = null
+                        synchronized(fileStreamLock) {
                             try {
                                 activeIncomingFileStream?.flush()
                                 activeIncomingFileStream?.close()
                                 activeIncomingFileStream = null
-
-                                val file = activeIncomingFile
-                                if (file != null && file.exists()) {
-                                    Log.d("JanusConnection", "File received completely over WebSocket: ${file.absolutePath} (${file.length()} bytes)")
-                                    android.media.MediaScannerConnection.scanFile(
-                                        context,
-                                        arrayOf(file.absolutePath),
-                                        null,
-                                        null
-                                    )
-
-                                    if (file.name.endsWith(".apk", ignoreCase = true)) {
-                                        promptApkInstallation(file)
-                                    }
-                                }
+                                completedFile = activeIncomingFile
                             } catch (e: Exception) {
                                 Log.e("JanusConnection", "Error closing file stream", e)
                             }
-                        }.start()
+                        }
+
+                        val file = completedFile
+                        if (file != null && file.exists()) {
+                            Log.d("JanusConnection", "File received completely over WebSocket: ${file.absolutePath} (${file.length()} bytes)")
+                            android.media.MediaScannerConnection.scanFile(
+                                context,
+                                arrayOf(file.absolutePath),
+                                null,
+                                null
+                            )
+
+                            if (file.name.endsWith(".apk", ignoreCase = true)) {
+                                promptApkInstallation(file)
+                            } else {
+                                showFileReceivedNotification(file)
+                            }
+                        }
                     }
 
                     onPacketReceived(packet)
@@ -663,6 +671,56 @@ class ConnectionManager(
         }
     }
 
+    private fun showFileReceivedNotification(file: java.io.File) {
+        try {
+            val extension = file.extension.lowercase()
+            val mimeType = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
+            val contentUri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+
+            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(contentUri, mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            val pendingIntent = android.app.PendingIntent.getActivity(
+                context,
+                file.hashCode(),
+                viewIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val channelId = "janus_file_transfers"
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val channel = android.app.NotificationChannel(
+                    channelId,
+                    "File Transfers",
+                    android.app.NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Notifications for received files"
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val notification = androidx.core.app.NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentTitle("File Received: ${file.name}")
+                .setContentText("Saved to Downloads/Janus • Tap to open")
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .build()
+
+            notificationManager.notify(file.hashCode(), notification)
+        } catch (e: Exception) {
+            Log.e("JanusConnection", "Failed to show file notification", e)
+        }
+    }
+
     private fun promptApkInstallation(file: java.io.File) {
         try {
             val apkUri = androidx.core.content.FileProvider.getUriForFile(
@@ -676,8 +734,10 @@ class ConnectionManager(
             }
             context.startActivity(installIntent)
             Log.d("JanusConnection", "Prompted package installer for: ${file.name}")
+            showFileReceivedNotification(file)
         } catch (e: Exception) {
             Log.e("JanusConnection", "Failed to launch package installer", e)
+            showFileReceivedNotification(file)
         }
     }
 }

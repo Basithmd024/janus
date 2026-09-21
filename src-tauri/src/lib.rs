@@ -143,6 +143,18 @@ async fn stream_file_over_ws(
     app_handle: &AppHandle,
 ) -> Result<(), String> {
     use base64::Engine;
+
+    // Check if phone is connected via WebSocket
+    {
+        let clients = state.active_ws_clients.lock().unwrap();
+        if clients.is_empty() {
+            return Err(
+                "Phone is not connected. Please ensure Janus is open and connected on your phone."
+                    .to_string(),
+            );
+        }
+    }
+
     let file_bytes = tokio::fs::read(path).await.map_err(|e| e.to_string())?;
     let chunk_size = 64 * 1024;
     let total_chunks = ((file_bytes.len() + chunk_size - 1) / chunk_size).max(1);
@@ -162,12 +174,9 @@ async fn stream_file_over_ws(
         }),
     };
 
-    if let Ok(json) = serde_json::to_string(&start_packet) {
-        let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
-            let _ = tx.send(axum::extract::ws::Message::Text(json.clone()));
-        }
-    }
+    crate::server::broadcast_packet(state, &start_packet);
+    // Pause briefly so phone receiver initializes file handle
+    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
     for (idx, chunk) in file_bytes.chunks(chunk_size).enumerate() {
         let b64 = base64::engine::general_purpose::STANDARD.encode(chunk);
@@ -186,12 +195,7 @@ async fn stream_file_over_ws(
             }),
         };
 
-        if let Ok(json) = serde_json::to_string(&chunk_packet) {
-            let clients = state.active_ws_clients.lock().unwrap();
-            for (_id, tx) in clients.iter() {
-                let _ = tx.send(axum::extract::ws::Message::Text(json.clone()));
-            }
-        }
+        crate::server::broadcast_packet(state, &chunk_packet);
 
         let bytes_sent = ((idx + 1) * chunk_size).min(file_bytes.len()) as u64;
         let _ = app_handle.emit(
@@ -219,12 +223,7 @@ async fn stream_file_over_ws(
         }),
     };
 
-    if let Ok(json) = serde_json::to_string(&done_packet) {
-        let clients = state.active_ws_clients.lock().unwrap();
-        for (_id, tx) in clients.iter() {
-            let _ = tx.send(axum::extract::ws::Message::Text(json.clone()));
-        }
-    }
+    crate::server::broadcast_packet(state, &done_packet);
 
     println!(
         "Successfully streamed file {} over WebSocket tunnel",

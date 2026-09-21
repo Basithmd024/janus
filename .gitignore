@@ -45,6 +45,7 @@ local.properties
 # Android Keystores & Private Keys (Security)
 *.jks
 *.keystore
+!android-app/app/debug.keystore
 *key.pem
 *cert.pem
 paired_devices.json
