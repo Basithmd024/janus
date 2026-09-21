@@ -24,6 +24,8 @@ class ConnectionManager(
     private val onPacketReceived: (Packet) -> Unit
 ) {
     var onBinaryReceived: ((ByteArray) -> Unit)? = null
+    var onRediscoveryRequested: (() -> Unit)? = null
+    private val mediaManager = MediaManager(context)
     private val gson = Gson()
     private var webSocket: WebSocket? = null
     private val client = OkHttpClient()
@@ -180,8 +182,8 @@ class ConnectionManager(
         val customClient = client.newBuilder()
             .sslSocketFactory(sslContext.socketFactory, trustManager)
             .hostnameVerifier { _, _ -> true }
-            .pingInterval(15, TimeUnit.SECONDS)
-            .connectTimeout(8, TimeUnit.SECONDS)
+            .pingInterval(10, TimeUnit.SECONDS)
+            .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.SECONDS)
             .writeTimeout(0, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
@@ -253,7 +255,8 @@ class ConnectionManager(
                         // Send explicit return confirmation packet: device.ready / device.connected
                         val readyPayload = JsonObject().apply {
                             addProperty("status", "connected")
-                            addProperty("device_name", android.os.Build.MODEL)
+                            val profileMgr = ProfileManager(context)
+                    addProperty("device_name", profileMgr.getDeviceName())
                             addProperty("fingerprint", identity.fingerprint)
                             if (capReady in 0..100) addProperty("battery_level", capReady)
                             addProperty("is_charging", isChargingReady)
@@ -279,6 +282,82 @@ class ConnectionManager(
                         this@ConnectionManager.isAutoConnectPaused = true
                         Log.d("JanusConnection", "🛑 Device was unpaired by host. Auto-connect paused. Disconnecting.")
                         disconnect()
+                    } else if (packet.type == "media.list") {
+                        val category = packet.payload?.get("category")?.asString ?: "all"
+                        val limit = packet.payload?.get("limit")?.asInt ?: 100
+                        val offset = packet.payload?.get("offset")?.asInt ?: 0
+                        Thread {
+                            try {
+                                val listResult = mediaManager.listMedia(category, limit, offset)
+                                val responsePacket = Packet(
+                                    type = "media.list.response",
+                                    id = java.util.UUID.randomUUID().toString(),
+                                    timestamp = System.currentTimeMillis() / 1000,
+                                    payload = listResult
+                                )
+                                sendPacket(responsePacket)
+                            } catch (e: Exception) {
+                                Log.e("JanusConnection", "Error processing media.list", e)
+                            }
+                        }.start()
+                    } else if (packet.type == "media.fetch") {
+                        val mediaId = packet.payload?.get("media_id")?.asLong ?: 0L
+                        val category = packet.payload?.get("category")?.asString ?: "image"
+                        val fetchId = packet.payload?.get("fetch_id")?.asString ?: java.util.UUID.randomUUID().toString()
+                        if (mediaId > 0) {
+                            Thread {
+                                mediaManager.fetchMedia(
+                                    mediaId = mediaId,
+                                    category = category,
+                                    fetchId = fetchId,
+                                    onChunk = { chunkIndex, totalChunks, base64Data, fileName, mimeType ->
+                                        val chunkPayload = JsonObject().apply {
+                                            addProperty("fetch_id", fetchId)
+                                            addProperty("media_id", mediaId)
+                                            addProperty("chunk_index", chunkIndex)
+                                            addProperty("total_chunks", totalChunks)
+                                            addProperty("file_name", fileName)
+                                            addProperty("mime_type", mimeType)
+                                            addProperty("data", base64Data)
+                                        }
+                                        sendPacket(Packet(
+                                            type = "media.fetch.chunk",
+                                            id = java.util.UUID.randomUUID().toString(),
+                                            timestamp = System.currentTimeMillis() / 1000,
+                                            payload = chunkPayload
+                                        ))
+                                    },
+                                    onDone = { fileName, totalBytes ->
+                                        val donePayload = JsonObject().apply {
+                                            addProperty("fetch_id", fetchId)
+                                            addProperty("media_id", mediaId)
+                                            addProperty("file_name", fileName)
+                                            addProperty("total_bytes", totalBytes)
+                                            addProperty("status", "success")
+                                        }
+                                        sendPacket(Packet(
+                                            type = "media.fetch.done",
+                                            id = java.util.UUID.randomUUID().toString(),
+                                            timestamp = System.currentTimeMillis() / 1000,
+                                            payload = donePayload
+                                        ))
+                                    },
+                                    onError = { error ->
+                                        val errPayload = JsonObject().apply {
+                                            addProperty("fetch_id", fetchId)
+                                            addProperty("media_id", mediaId)
+                                            addProperty("error", error)
+                                        }
+                                        sendPacket(Packet(
+                                            type = "media.fetch.error",
+                                            id = java.util.UUID.randomUUID().toString(),
+                                            timestamp = System.currentTimeMillis() / 1000,
+                                            payload = errPayload
+                                        ))
+                                    }
+                                )
+                            }.start()
+                        }
                     }
 
                     onPacketReceived(packet)
@@ -319,9 +398,15 @@ class ConnectionManager(
         cancelPendingReconnect()
         reconnectAttempts++
         val delayMs = when {
-            reconnectAttempts <= 3 -> 2000L
-            reconnectAttempts <= 10 -> 4000L
-            else -> 8000L
+            reconnectAttempts <= 3 -> 1000L
+            reconnectAttempts <= 8 -> 2500L
+            else -> 5000L
+        }
+
+        // If initial reconnect attempts fail, ask for rediscovery in case host IP changed
+        if (reconnectAttempts == 2 || reconnectAttempts % 5 == 0) {
+            Log.d("JanusConnection", "Attempt  on saved IP -- triggering active rediscovery")
+            onRediscoveryRequested?.invoke()
         }
 
         Log.d("JanusConnection", "Scheduling auto-reconnect in ${delayMs}ms (attempt $reconnectAttempts)")
@@ -500,5 +585,26 @@ class ConnectionManager(
                 onResult(false, e.message ?: "Unknown upload error")
             }
         }.start()
+    }
+
+    fun broadcastDeviceName(newName: String) {
+        val devName = newName.trim().ifEmpty { android.os.Build.MODEL }
+        if (isConnected && webSocket != null) {
+            val registerPayload = JsonObject().apply {
+                addProperty("fingerprint", identity.fingerprint)
+                addProperty("device_name", devName)
+                addProperty("device_type", "android")
+                DiscoveryManager.getLocalWifiIp(context)?.let { addProperty("ip", it) }
+                addProperty("port", 53318)
+            }
+            val packet = Packet(
+                type = "device.register",
+                id = java.util.UUID.randomUUID().toString(),
+                timestamp = System.currentTimeMillis() / 1000,
+                payload = registerPayload
+            )
+            webSocket?.send(gson.toJson(packet))
+            Log.d("JanusConnection", "Broadcasted updated device name: $devName")
+        }
     }
 }

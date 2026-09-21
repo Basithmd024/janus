@@ -1,16 +1,17 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
   "min_version": "1.0.0",
-  "release_date": "2026-08-20",
-  "title": "Janus v2.0.0 \u2014 Refined Light UI & Logo Crest",
+  "release_date": "2026-09-21",
+  "title": "Janus v2.1.0 — Phone Media Browsing, Auto-Start & Auto-Connect Optimization",
   "notes": [
-    "Stable v2.0.0 Android & macOS release",
-    "Default Light Mode theme across Android with reference card design & crest logo",
-    "Full macOS desktop app & Android mobile bridge integration"
+    "Complete Phone Media Browsing: Browse, preview, and download photos, videos, and documents directly from Mac",
+    "Auto-Start: Android starts on boot (BootReceiver), Mac launches at login (tauri-plugin-autostart)",
+    "Auto-Connect Optimization: Accelerated 1s reconnect + dynamic mDNS rediscovery on network change",
+    "Zero-touch background reconnect when switching between Wi-Fi and Hotspot"
   ],
   "downloads": {
-    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v2.0.0/app-debug.apk",
-    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v2.0.0/Janus.dmg",
-    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v2.0.0"
+    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v2.1.0/app-debug.apk",
+    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v2.1.0/Janus.dmg",
+    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v2.1.0"
   }
 }

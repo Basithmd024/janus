@@ -211,7 +211,8 @@ class JanusService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d("JanusService", "Service onStartCommand")
+        val source = intent?.getStringExtra("source") ?: "user"
+        Log.d("JanusService", "Service onStartCommand (source=$source)")
         if (!isServiceRunning) {
             startForegroundServiceNotification()
             isServiceRunning = true
@@ -242,6 +243,11 @@ class JanusService : Service() {
                     handleIncomingPacket(packet)
                 }
             )
+            connectionManager?.onRediscoveryRequested = {
+                Log.d("JanusService", "Rediscovery requested by ConnectionManager -- refreshing mDNS browse")
+                discoveryManager?.stopBrowsing()
+                discoveryManager?.startBrowsing()
+            }
             connectionManager?.onBinaryReceived = { bytes ->
                 if (bytes.isNotEmpty() && bytes[0] == 0x03.toByte()) {
                     val audioBytes = ByteArray(bytes.size - 1)
@@ -282,6 +288,7 @@ class JanusService : Service() {
                             val ip = txtIp ?: nsdInfo.host?.hostAddress
                             if (ip != null) {
                                 Log.d("JanusService", "Auto-reconnecting to paired device: ${nsdInfo.serviceName} at $ip")
+                                cm.savePairedDevice(fingerprint, ip, nsdInfo.port)
                                 cm.connectToDevice(ip, nsdInfo.port, fingerprint)
                             }
                         }
@@ -312,11 +319,19 @@ class JanusService : Service() {
                         if (connMgr != null && !connMgr.isConnected && !connMgr.isConnecting) {
                             Log.d("JanusService", "🌐 Network available and currently offline — triggering background auto-connect")
                             connMgr.autoConnectToSavedHosts()
+                            discoveryManager?.startBrowsing()
                         }
                     }
                 })
             } catch (e: Exception) {
                 Log.w("JanusService", "Could not register network callback", e)
+            }
+        } else {
+            val cm = connectionManager
+            if (cm != null && !cm.isConnected && !cm.isConnecting) {
+                Log.d("JanusService", "Service already running, waking auto-connect and discovery")
+                cm.autoConnectToSavedHosts()
+                discoveryManager?.startBrowsing()
             }
         }
         return START_STICKY

@@ -1,9 +1,7 @@
 package com.janus.app
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -11,25 +9,49 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.*
+import androidx.camera.core.Camera
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,66 +62,62 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import com.google.zxing.*
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
+import com.google.zxing.LuminanceSource
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
-import java.nio.ByteBuffer
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 class QrScannerActivity : ComponentActivity() {
 
-    private val cameraExecutor = Executors.newSingleThreadExecutor()
+    private lateinit var cameraExecutor: ExecutorService
     private var camera: Camera? = null
-    private var isTorchOn by mutableStateOf(false)
     private val isScanned = AtomicBoolean(false)
-
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (!isGranted) {
-            Toast.makeText(this, "Camera permission is required to scan QR code", Toast.LENGTH_LONG).show()
-            finish()
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissionLauncher.launch(Manifest.permission.CAMERA)
-        }
+        cameraExecutor = Executors.newSingleThreadExecutor()
 
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
-                    QrScannerScreen(
-                        isTorchOn = isTorchOn,
-                        onToggleTorch = {
-                            isTorchOn = !isTorchOn
-                            camera?.cameraControl?.enableTorch(isTorchOn)
-                        },
-                        onBack = { finish() },
-                        onQrCodeScanned = { rawResult ->
-                            if (isScanned.compareAndSet(false, true)) {
-                                triggerHaptic()
-                                val data = Intent().apply {
-                                    putExtra(EXTRA_QR_RESULT, rawResult)
-                                }
-                                setResult(RESULT_OK, data)
-                                finish()
+            var isTorchOn by remember { mutableStateOf(false) }
+
+            Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
+                QrScannerScreen(
+                    isTorchOn = isTorchOn,
+                    onToggleTorch = {
+                        isTorchOn = !isTorchOn
+                        camera?.cameraControl?.enableTorch(isTorchOn)
+                    },
+                    onBack = { finish() },
+                    onQrCodeScanned = { rawResult ->
+                        if (isScanned.compareAndSet(false, true)) {
+                            triggerHaptic()
+                            val data = Intent().apply {
+                                putExtra(EXTRA_QR_RESULT, rawResult)
                             }
-                        },
-                        onBindCamera = { cam ->
-                            camera = cam
+                            setResult(RESULT_OK, data)
+                            finish()
                         }
-                    )
-                }
+                    },
+                    onBindCamera = { cam ->
+                        camera = cam
+                    },
+                    cameraExecutor = cameraExecutor
+                )
             }
         }
     }
@@ -138,9 +156,9 @@ fun QrScannerScreen(
     onToggleTorch: () -> Unit,
     onBack: () -> Unit,
     onQrCodeScanned: (String) -> Unit,
-    onBindCamera: (Camera) -> Unit
+    onBindCamera: (Camera) -> Unit,
+    cameraExecutor: ExecutorService
 ) {
-    val context = LocalContext.current
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
 
     // Animated laser scanner bar
@@ -180,7 +198,13 @@ fun QrScannerScreen(
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
 
-                    val reader = MultiFormatReader().apply {
+                    val barcodeScanner = BarcodeScanning.getClient(
+                        BarcodeScannerOptions.Builder()
+                            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                            .build()
+                    )
+
+                    val zxingReader = MultiFormatReader().apply {
                         val hints = mapOf(
                             DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
                             DecodeHintType.TRY_HARDER to true
@@ -188,36 +212,37 @@ fun QrScannerScreen(
                         setHints(hints)
                     }
 
-                    imageAnalysis.setAnalyzer(Executors.newSingleThreadExecutor()) { imageProxy ->
-                        val buffer = imageProxy.planes[0].buffer
-                        val data = buffer.toByteArray()
-                        val width = imageProxy.width
-                        val height = imageProxy.height
+                    @OptIn(ExperimentalGetImage::class)
+                    imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                        val mediaImage = imageProxy.image
+                        if (mediaImage != null) {
+                            val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                            val image = InputImage.fromMediaImage(mediaImage, rotationDegrees)
 
-                        val source = PlanarYUVLuminanceSource(
-                            data,
-                            width,
-                            height,
-                            0,
-                            0,
-                            width,
-                            height,
-                            false
-                        )
-                        val bitmap = BinaryBitmap(HybridBinarizer(source))
-
-                        try {
-                            val result = reader.decodeWithState(bitmap)
-                            val text = result.text
-                            if (!text.isNullOrBlank()) {
-                                onQrCodeScanned(text)
-                            }
-                        } catch (_: NotFoundException) {
-                            // Frame doesn't contain QR code
-                        } catch (e: Exception) {
-                            Log.w("QrScanner", "Decode error: ${e.message}")
-                        } finally {
-                            reader.reset()
+                            barcodeScanner.process(image)
+                                .addOnSuccessListener { barcodes ->
+                                    var handled = false
+                                    for (barcode in barcodes) {
+                                        val raw = barcode.rawValue
+                                        if (!raw.isNullOrBlank()) {
+                                            handled = true
+                                            onQrCodeScanned(raw)
+                                            break
+                                        }
+                                    }
+                                    if (!handled) {
+                                        // Try robust fallback
+                                        tryZxingFallback(imageProxy, zxingReader, onQrCodeScanned)
+                                    }
+                                }
+                                .addOnFailureListener {
+                                    tryZxingFallback(imageProxy, zxingReader, onQrCodeScanned)
+                                }
+                                .addOnCompleteListener {
+                                    imageProxy.close()
+                                }
+                        } else {
+                            tryZxingFallback(imageProxy, zxingReader, onQrCodeScanned)
                             imageProxy.close()
                         }
                     }
@@ -315,7 +340,7 @@ fun QrScannerScreen(
                     .size(44.dp)
                     .background(Color(0x66000000), CircleShape)
             ) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -329,7 +354,7 @@ fun QrScannerScreen(
                     .size(44.dp)
                     .background(if (isTorchOn) Color(0xFF6366F1) else Color(0x66000000), CircleShape)
             ) {
-                Text(if (isTorchOn) "🔦" else "💡", fontSize = 18.sp)
+                Text(if (isTorchOn) "Torch ON" else "Torch", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -353,9 +378,53 @@ fun QrScannerScreen(
     }
 }
 
-private fun ByteBuffer.toByteArray(): ByteArray {
-    rewind()
-    val data = ByteArray(remaining())
-    get(data)
-    return data
+private fun tryZxingFallback(
+    imageProxy: ImageProxy,
+    reader: MultiFormatReader,
+    onQrCodeScanned: (String) -> Unit
+) {
+    try {
+        val plane = imageProxy.planes[0]
+        val buffer = plane.buffer
+        val rowStride = plane.rowStride
+        val width = imageProxy.width
+        val height = imageProxy.height
+
+        val yBytes = ByteArray(width * height)
+        buffer.rewind()
+        for (row in 0 until height) {
+            buffer.position(row * rowStride)
+            buffer.get(yBytes, row * width, width)
+        }
+
+        val rotation = imageProxy.imageInfo.rotationDegrees
+        val source: LuminanceSource = if (rotation == 90) {
+            val rotated = ByteArray(width * height)
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    rotated[x * height + (height - y - 1)] = yBytes[x + y * width]
+                }
+            }
+            PlanarYUVLuminanceSource(rotated, height, width, 0, 0, height, width, false)
+        } else if (rotation == 270) {
+            val rotated = ByteArray(width * height)
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    rotated[(width - x - 1) * height + y] = yBytes[x + y * width]
+                }
+            }
+            PlanarYUVLuminanceSource(rotated, height, width, 0, 0, height, width, false)
+        } else {
+            PlanarYUVLuminanceSource(yBytes, width, height, 0, 0, width, height, false)
+        }
+
+        val bitmap = BinaryBitmap(HybridBinarizer(source))
+        val result = reader.decodeWithState(bitmap)
+        if (!result.text.isNullOrBlank()) {
+            onQrCodeScanned(result.text)
+        }
+    } catch (_: Exception) {
+    } finally {
+        reader.reset()
+    }
 }

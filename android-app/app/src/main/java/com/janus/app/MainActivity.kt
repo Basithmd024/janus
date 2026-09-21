@@ -578,11 +578,9 @@ class MainActivity : ComponentActivity() {
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
 
-
-
-                        // Device Identity & Custom Name Card
+                        // Device Profile & Settings Card
                         val profileMgr = remember { com.janus.app.core.ProfileManager(this@MainActivity) }
-                        var currentDevNameInput by remember { mutableStateOf(profileMgr.getDeviceName()) }
+                        var customDeviceNameInput by remember { mutableStateOf(profileMgr.getDeviceName()) }
 
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -594,8 +592,8 @@ class MainActivity : ComponentActivity() {
                                 Text("Device Identity & Settings", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
                                 
                                 OutlinedTextField(
-                                    value = currentDevNameInput,
-                                    onValueChange = { currentDevNameInput = it },
+                                    value = customDeviceNameInput,
+                                    onValueChange = { customDeviceNameInput = it },
                                     label = { Text("Device Name") },
                                     modifier = Modifier.fillMaxWidth(),
                                     singleLine = true
@@ -603,19 +601,21 @@ class MainActivity : ComponentActivity() {
 
                                 Button(
                                     onClick = {
-                                        if (currentDevNameInput.isNotBlank()) {
-                                            profileMgr.setDeviceName(currentDevNameInput)
-                                            Toast.makeText(this@MainActivity, "Device Name Updated to: $currentDevNameInput", Toast.LENGTH_SHORT).show()
+                                        val clean = customDeviceNameInput.trim()
+                                        if (clean.isNotBlank()) {
+                                            profileMgr.setDeviceName(clean)
+                                            janusService?.connectionManager?.broadcastDeviceName(clean)
+                                            Toast.makeText(this@MainActivity, "Device Name Synced to Mac: $clean", Toast.LENGTH_SHORT).show()
                                         }
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("Save Device Name")
+                                    Text("Save & Sync Device Name")
                                 }
 
                                 HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
 
-                                Text("Model: ${Build.MODEL}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                                Text("Hardware: ${Build.MODEL}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                                 Text("Fingerprint: ${localFingerprint.value.take(16)}...", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
                                 Text(
                                     text = if (isConnectedState.value) "Connected to Mac Node" else "Not Connected",

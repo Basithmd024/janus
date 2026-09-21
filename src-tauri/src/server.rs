@@ -17,7 +17,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 use tauri::{AppHandle, Emitter};
 
-use crate::protocol::{Packet, PrepareUploadRequest, PrepareUploadResponse, FileMetadata, DeviceInfo, UserProfile, NotificationItem};
+use crate::protocol::{Packet, PrepareUploadRequest, PrepareUploadResponse, FileMetadata, DeviceInfo};
 use crate::security::{Identity, PairedDeviceStore, save_paired_device};
 use crate::clipboard::ClipboardState;
 
@@ -443,6 +443,20 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
         }
         "device.ready" => {
             println!("🟢 Phone confirmed connected and ready: {}", packet.payload);
+            if let (Some(dev_name), Some(fp)) = (
+                packet.payload.get("device_name").and_then(|v| v.as_str()),
+                packet.payload.get("fingerprint").and_then(|v| v.as_str())
+            ) {
+                let store = crate::security::PairedDeviceStore {
+                    fingerprint: fp.to_string(),
+                    name: dev_name.to_string(),
+                    added_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                };
+                let _ = crate::security::save_paired_device(state.config_dir.clone(), store);
+            }
             {
                 let mut t = state.last_telemetry.lock().unwrap();
                 if let Some(existing) = t.as_mut() {
@@ -472,22 +486,17 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                 Ok(payload) => {
                     println!("📱 Device registered via WebSocket: {} ({})", payload.device_name, payload.fingerprint);
 
-                    // Auto-pair on registration if not already saved (Trust-on-First-Sight)
-                    let paired_devices = crate::security::load_paired_devices(state.config_dir.clone()).unwrap_or_default();
-                    let is_paired = paired_devices.iter().any(|d| d.fingerprint == payload.fingerprint);
-
-                    if !is_paired {
-                        println!("🤝 Auto-pairing & approving device: {} ({})", payload.device_name, payload.fingerprint);
-                        let new_paired = crate::security::PairedDeviceStore {
-                            fingerprint: payload.fingerprint.clone(),
-                            name: payload.device_name.clone(),
-                            added_at: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs(),
-                        };
-                        let _ = crate::security::save_paired_device(state.config_dir.clone(), new_paired);
-                    }
+                    // Always sync/update device name to paired device store
+                    println!("🤝 Syncing device name to Mac: {} ({})", payload.device_name, payload.fingerprint);
+                    let new_paired = crate::security::PairedDeviceStore {
+                        fingerprint: payload.fingerprint.clone(),
+                        name: payload.device_name.clone(),
+                        added_at: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
+                    };
+                    let _ = crate::security::save_paired_device(state.config_dir.clone(), new_paired);
 
                     // Send registration success packet back to phone
                     if let Some(tx) = state.active_ws_clients.lock().unwrap().get(client_id) {
@@ -543,6 +552,55 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                     eprintln!("Failed to parse RegisterPayload from packet: {}. Error: {}", packet.payload, e);
                 }
             }
+        }
+        "media.list.response" => {
+            let item_count = packet.payload.get("count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            println!("📸 Received media list from Android: {} items", item_count);
+            let _ = state.app_handle.emit("media-list-received", packet.payload);
+        }
+        "media.fetch.chunk" => {
+            if let (Some(_fetch_id), Some(file_name), Some(data_b64), Some(chunk_index)) = (
+                packet.payload.get("fetch_id").and_then(|v| v.as_str()),
+                packet.payload.get("file_name").and_then(|v| v.as_str()),
+                packet.payload.get("data").and_then(|v| v.as_str()),
+                packet.payload.get("chunk_index").and_then(|v| v.as_u64()),
+            ) {
+                use base64::Engine;
+                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data_b64) {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                    let dir = format!("{}/Downloads/Janus", home);
+                    let _ = std::fs::create_dir_all(&dir);
+                    let file_path = format!("{}/{}", dir, file_name);
+
+                    use std::fs::OpenOptions;
+                    use std::io::Write;
+                    let file_res = if chunk_index == 0 {
+                        OpenOptions::new().create(true).write(true).truncate(true).open(&file_path)
+                    } else {
+                        OpenOptions::new().create(true).write(true).append(true).open(&file_path)
+                    };
+
+                    if let Ok(mut f) = file_res {
+                        let _ = f.write_all(&bytes);
+                    }
+                }
+            }
+            let _ = state.app_handle.emit("media-fetch-chunk", packet.payload);
+        }
+        "media.fetch.done" => {
+            if let Some(file_name) = packet.payload.get("file_name").and_then(|v| v.as_str()) {
+                let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                let file_path = format!("{}/Downloads/Janus/{}", home, file_name);
+                println!("📸 Media fetch complete: {}", file_path);
+                show_macos_notification("📸 Media Download Complete", &format!("Saved {} to Downloads/Janus", file_name));
+            }
+            let _ = state.app_handle.emit("media-fetch-done", packet.payload);
+        }
+        "media.fetch.error" => {
+            eprintln!("⚠️ Media fetch error from phone: {}", packet.payload);
+            let _ = state.app_handle.emit("media-fetch-error", packet.payload);
         }
         "feedback.submit" => {
             if let (Some(feedback_type), Some(message)) = (

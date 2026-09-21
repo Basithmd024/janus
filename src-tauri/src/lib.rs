@@ -966,11 +966,121 @@ async fn download_and_open_update(
     Ok("Update downloaded successfully".to_string())
 }
 
+#[tauri::command]
+async fn toggle_autostart(app: AppHandle, enable: bool) -> Result<String, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let autostart = app.autolaunch();
+    if enable {
+        autostart.enable().map_err(|e| format!("Failed to enable autostart: {}", e))?;
+        Ok("Autostart enabled".to_string())
+    } else {
+        autostart.disable().map_err(|e| format!("Failed to disable autostart: {}", e))?;
+        Ok("Autostart disabled".to_string())
+    }
+}
+
+#[tauri::command]
+async fn get_autostart_status(app: AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let autostart = app.autolaunch();
+    autostart.is_enabled().map_err(|e| format!("Failed to check autostart: {}", e))
+}
+
+#[tauri::command]
+async fn request_media_list(
+    state: State<'_, SharedState>,
+    category: Option<String>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<String, String> {
+    let packet = crate::protocol::Packet {
+        r#type: "media.list".to_string(),
+        id: uuid::Uuid::new_v4().to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({
+            "category": category.unwrap_or_else(|| "all".to_string()),
+            "limit": limit.unwrap_or(100),
+            "offset": offset.unwrap_or(0),
+        }),
+    };
+
+    if let Ok(json) = serde_json::to_string(&packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        if clients.is_empty() {
+            return Err("No connected device to request media from".to_string());
+        }
+        for (_id, tx) in clients.iter() {
+            let msg = axum::extract::ws::Message::Text(json.clone());
+            let _ = tx.send(msg);
+        }
+        Ok("Media list requested".to_string())
+    } else {
+        Err("Failed to serialize media request packet".to_string())
+    }
+}
+
+#[tauri::command]
+async fn request_media_fetch(
+    state: State<'_, SharedState>,
+    media_id: String,
+    category: String,
+    file_name: String,
+) -> Result<String, String> {
+    let id_num: u64 = media_id.parse().unwrap_or(0);
+    let packet = crate::protocol::Packet {
+        r#type: "media.fetch".to_string(),
+        id: uuid::Uuid::new_v4().to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({
+            "media_id": id_num,
+            "category": category,
+            "file_name": file_name,
+            "fetch_id": uuid::Uuid::new_v4().to_string(),
+        }),
+    };
+
+    if let Ok(json) = serde_json::to_string(&packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        if clients.is_empty() {
+            return Err("No connected device to fetch media from".to_string());
+        }
+        for (_id, tx) in clients.iter() {
+            let msg = axum::extract::ws::Message::Text(json.clone());
+            let _ = tx.send(msg);
+        }
+        Ok("Media fetch requested".to_string())
+    } else {
+        Err("Failed to serialize media fetch packet".to_string())
+    }
+}
+
+#[tauri::command]
+async fn open_media_folder() -> Result<String, String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let dir = format!("{}/Downloads/Janus", home);
+    let _ = std::fs::create_dir_all(&dir);
+    
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg(&dir)
+            .spawn();
+    }
+    Ok(dir)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
             let config_dir = app.path().app_config_dir()
                 .map_err(|e| format!("Failed to get config dir: {}", e))?;
@@ -1192,7 +1302,12 @@ pub fn run() {
             mark_all_notifications_read,
             clear_notifications,
             delete_notification,
-            submit_bug_report
+            submit_bug_report,
+            toggle_autostart,
+            get_autostart_status,
+            request_media_list,
+            request_media_fetch,
+            open_media_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

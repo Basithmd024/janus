@@ -183,6 +183,25 @@
   let isMirroring = $state<boolean>(false);
   let activeTab = $state<string>("overview");
 
+  // Media Browser State
+  interface MediaItem {
+    id: string;
+    name: string;
+    size: number;
+    date_modified: number;
+    mime_type: string;
+    category: string;
+    thumbnail?: string;
+    duration_ms?: number;
+  }
+  let mediaItems = $state<MediaItem[]>([]);
+  let mediaCategory = $state<string>("all");
+  let isLoadingMedia = $state<boolean>(false);
+  let mediaSearchQuery = $state<string>("");
+  let downloadingMediaId = $state<string | null>(null);
+  let downloadedMedia = $state<Set<string>>(new Set());
+  let autostartEnabled = $state<boolean>(false);
+
   // Phone Call states
   interface IncomingCall {
     phoneNumber: string;
@@ -506,8 +525,76 @@
       } catch (e) {
         showToast("Failed to request SMS list: " + e, "error");
       }
+    } else if (tab === "media") {
+      fetchMediaList();
     }
   }
+
+  async function fetchMediaList(category: string = mediaCategory) {
+    mediaCategory = category;
+    isLoadingMedia = true;
+    try {
+      await invoke("request_media_list", { category, limit: 100, offset: 0 });
+    } catch (e: any) {
+      isLoadingMedia = false;
+      console.warn("request_media_list error:", e);
+    }
+  }
+
+  async function downloadMedia(item: MediaItem) {
+    if (downloadingMediaId) return;
+    downloadingMediaId = item.id;
+    try {
+      await invoke("request_media_fetch", {
+        mediaId: item.id,
+        category: item.category,
+        fileName: item.name
+      });
+      showToast(`Downloading ${item.name}...`, "info");
+    } catch (e: any) {
+      downloadingMediaId = null;
+      showToast("Failed to download media: " + e, "error");
+    }
+  }
+
+  async function openDownloadsFolder() {
+    try {
+      await invoke("open_media_folder");
+    } catch (e: any) {
+      showToast("Failed to open folder: " + e, "error");
+    }
+  }
+
+  async function toggleAutostart() {
+    try {
+      const nextState = !autostartEnabled;
+      await invoke("toggle_autostart", { enable: nextState });
+      autostartEnabled = nextState;
+      showToast(nextState ? "Launch at login enabled" : "Launch at login disabled", "success");
+    } catch (e: any) {
+      showToast("Failed to update launch at login: " + e, "error");
+    }
+  }
+
+
+
+  function formatMediaDate(timestamp: number): string {
+    if (!timestamp) return "";
+    const ms = timestamp > 10000000000 ? timestamp : timestamp * 1000;
+    return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  let filteredMediaItems = $derived(
+    mediaItems.filter((item) => {
+      const matchesSearch = !mediaSearchQuery || item.name.toLowerCase().includes(mediaSearchQuery.toLowerCase());
+      const matchesCategory =
+        mediaCategory === "all" ||
+        (mediaCategory === "photos" && item.category === "image") ||
+        (mediaCategory === "videos" && item.category === "video") ||
+        (mediaCategory === "downloads" && item.category === "download");
+      return matchesSearch && matchesCategory;
+    })
+  );
 
   async function loadAudioOutputs() {
     try {
@@ -1325,6 +1412,39 @@
     });
     unlisteners.push(unlistenNotificationDismiss);
 
+    // Check launch at login status
+    try {
+      autostartEnabled = await invoke<boolean>("get_autostart_status");
+    } catch (_) {}
+
+    // Media browser listeners
+    const unlistenMediaList = await listen<any>("media-list-received", (event) => {
+      isLoadingMedia = false;
+      if (event.payload && event.payload.items) {
+        mediaItems = event.payload.items;
+      }
+    });
+    unlisteners.push(unlistenMediaList);
+
+    const unlistenMediaDone = await listen<any>("media-fetch-done", (event) => {
+      const fileName = event.payload?.file_name || "file";
+      const mediaId = event.payload?.media_id ? String(event.payload.media_id) : null;
+      if (mediaId) {
+        downloadedMedia = new Set([...downloadedMedia, mediaId]);
+      }
+      if (downloadingMediaId === mediaId) {
+        downloadingMediaId = null;
+      }
+      showToast(`Downloaded ${fileName} to Downloads/Janus`, "success");
+    });
+    unlisteners.push(unlistenMediaDone);
+
+    const unlistenMediaError = await listen<any>("media-fetch-error", (event) => {
+      downloadingMediaId = null;
+      showToast(`Media download failed: ${event.payload?.error || 'Unknown error'}`, "error");
+    });
+    unlisteners.push(unlistenMediaError);
+
     const unlistenScreencast = await listen<number[]>("screencast-frame", (event) => {
       isMirroring = true;
       const frameBytes = new Uint8Array(event.payload);
@@ -1719,6 +1839,10 @@
       <button class="nav-item {activeTab === 'files' ? 'active' : ''}" onclick={() => selectTab('files')}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" stroke="currentColor" stroke-width="1.5"/></svg>
         <span>Files</span>
+      </button>
+      <button class="nav-item {activeTab === 'media' ? 'active' : ''}" onclick={() => selectTab('media')}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" stroke-width="1.5"/><polyline points="21 15 16 10 5 21" stroke="currentColor" stroke-width="1.5"/></svg>
+        <span>Media</span>
       </button>
       <button class="nav-item {activeTab === 'dialer' ? 'active' : ''}" onclick={() => selectTab('dialer')}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -2298,6 +2422,127 @@
         </div>
       </div>
       
+    <!-- ═══════ MEDIA TAB ═══════ -->
+    {:else if activeTab === 'media'}
+      <div class="tab-panel media-tab">
+        <div class="panel-header" style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+          <div>
+            <h2>Phone Media &amp; Files</h2>
+            <p class="panel-desc">Browse, preview, and download photos, videos, and files directly from your phone.</p>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-secondary btn-sm" onclick={() => fetchMediaList(mediaCategory)} disabled={isLoadingMedia}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class={isLoadingMedia ? "spin" : ""}><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+              <span>{isLoadingMedia ? "Loading..." : "Refresh"}</span>
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick={openDownloadsFolder}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+              <span>Downloads Folder</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="media-controls-bar">
+          <div class="media-category-pills">
+            <button class="cat-pill {mediaCategory === 'all' ? 'active' : ''}" onclick={() => fetchMediaList('all')}>All</button>
+            <button class="cat-pill {mediaCategory === 'photos' ? 'active' : ''}" onclick={() => fetchMediaList('photos')}>Photos</button>
+            <button class="cat-pill {mediaCategory === 'videos' ? 'active' : ''}" onclick={() => fetchMediaList('videos')}>Videos</button>
+            <button class="cat-pill {mediaCategory === 'downloads' ? 'active' : ''}" onclick={() => fetchMediaList('downloads')}>Downloads &amp; Docs</button>
+          </div>
+          <div class="media-search-box">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input type="text" placeholder="Filter by filename..." bind:value={mediaSearchQuery} />
+            {#if mediaSearchQuery}
+              <button class="clear-search" onclick={() => mediaSearchQuery = ""}>✕</button>
+            {/if}
+          </div>
+        </div>
+
+        {#if discoveredDevices.length === 0}
+          <div class="empty-state" style="margin-top: 2rem;">
+            <div class="empty-icon">
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="1.2"/><circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" stroke-width="1.2"/><polyline points="21 15 16 10 5 21" stroke="currentColor" stroke-width="1.2"/></svg>
+            </div>
+            <h3>Device Offline</h3>
+            <p>Connect your phone on the same Wi-Fi network to browse and download its media files.</p>
+          </div>
+        {:else if isLoadingMedia && mediaItems.length === 0}
+          <div class="empty-state" style="margin-top: 2rem;">
+            <div class="spinner" style="margin-bottom: 1rem;"></div>
+            <h3>Loading Media from Phone...</h3>
+            <p>Querying phone photo gallery and files over local network.</p>
+          </div>
+        {:else if filteredMediaItems.length === 0}
+          <div class="empty-state" style="margin-top: 2rem;">
+            <div class="empty-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" stroke-width="1.2"/></svg>
+            </div>
+            <h3>No Media Found</h3>
+            <p>{mediaSearchQuery ? "No files matched your search filter." : "No files found in this category on your phone."}</p>
+          </div>
+        {:else}
+          <div class="media-grid">
+            {#each filteredMediaItems as item (item.id)}
+              <div class="media-card">
+                <div class="media-preview-container">
+                  {#if item.thumbnail}
+                    <img src="data:image/jpeg;base64,{item.thumbnail}" alt={item.name} class="media-thumb" loading="lazy" />
+                  {:else if item.category === 'video'}
+                    <div class="media-placeholder video">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/></svg>
+                    </div>
+                  {:else if item.category === 'download'}
+                    <div class="media-placeholder doc">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="1.5"/><polyline points="14 2 14 8 20 8" stroke="currentColor" stroke-width="1.5"/></svg>
+                      <span class="media-ext">{item.name.split('.').pop()?.toUpperCase() || "DOC"}</span>
+                    </div>
+                  {:else}
+                    <div class="media-placeholder img">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" stroke-width="1.5"/><polyline points="21 15 16 10 5 21" stroke="currentColor" stroke-width="1.5"/></svg>
+                    </div>
+                  {/if}
+
+                  {#if item.category === 'video'}
+                    <span class="video-duration-badge">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                      VIDEO
+                    </span>
+                  {/if}
+
+                  <div class="media-overlay">
+                    <button
+                      class="btn-download-overlay {downloadedMedia.has(item.id) ? 'downloaded' : ''}"
+                      onclick={() => downloadMedia(item)}
+                      disabled={downloadingMediaId === item.id}
+                      title="Download to Mac"
+                    >
+                      {#if downloadingMediaId === item.id}
+                        <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                      {:else if downloadedMedia.has(item.id)}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span>Saved</span>
+                      {:else}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        <span>Save to Mac</span>
+                      {/if}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="media-info">
+                  <div class="media-title" title={item.name}>{item.name}</div>
+                  <div class="media-meta">
+                    <span>{formatBytes(item.size)}</span>
+                    <span>•</span>
+                    <span>{formatMediaDate(item.date_modified)}</span>
+                  </div>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
     <!-- ═══════ DIALER TAB ═══════ -->
     {:else if activeTab === 'dialer'}
       <div class="tab-panel dialer-tab">
@@ -2570,6 +2815,32 @@
             </div>
           </div>
 
+          <!-- System & Startup Card -->
+          <div class="settings-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2v10M4.93 4.93l7.07 7.07M2 12h10M4.93 19.07l7.07-7.07M12 22v-10M19.07 19.07l-7.07-7.07M22 12h-10M19.07 4.93l-7.07 7.07" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              System &amp; Startup
+            </h3>
+            <div class="detail-grid">
+              <div class="detail-row" style="align-items: center;">
+                <div>
+                  <span class="detail-label" style="font-weight: 500; color: var(--text-primary);">Launch at Login (Mac Auto-Start)</span>
+                  <p style="font-size: 0.72rem; color: var(--text-secondary); margin: 2px 0 0 0;">Automatically launch Janus on Mac startup so your phone connects immediately</p>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" checked={autostartEnabled} onchange={toggleAutostart} />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="detail-row" style="align-items: center;">
+                <div>
+                  <span class="detail-label" style="font-weight: 500; color: var(--text-primary);">Auto-Connect Optimization</span>
+                  <p style="font-size: 0.72rem; color: var(--text-secondary); margin: 2px 0 0 0;">Fast-path reconnect (1s) + dynamic mDNS rediscovery</p>
+                </div>
+                <span class="badge badge-success" style="font-size: 0.7rem; padding: 4px 8px; border-radius: 6px;">Active</span>
+              </div>
+            </div>
+          </div>
           <!-- Software Updates Card -->
           <div class="settings-section">
             <h3 class="section-title">
@@ -5450,6 +5721,288 @@
     padding: 8px 24px;
   }
 
+
+  /* ════════════════════════════════════════════════
+     MEDIA BROWSER TAB STYLES
+     ════════════════════════════════════════════════ */
+  .media-tab {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .media-controls-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: var(--bg-surface);
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .media-category-pills {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .cat-pill {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+
+  .cat-pill:hover {
+    color: var(--text-primary);
+    border-color: var(--border-accent);
+    background: var(--hover-bg);
+  }
+
+  .cat-pill.active {
+    background: var(--accent);
+    color: #ffffff;
+    border-color: var(--accent);
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+  }
+
+  .media-search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 20px;
+    padding: 4px 12px;
+    color: var(--text-secondary);
+    min-width: 220px;
+  }
+
+  .media-search-box input {
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 0.78rem;
+    color: var(--text-primary);
+    width: 100%;
+  }
+
+  .clear-search {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 0;
+  }
+
+  .media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+    padding-bottom: 24px;
+  }
+
+  .media-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: transform var(--transition), box-shadow var(--transition);
+  }
+
+  .media-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-elevated);
+    border-color: var(--border-accent);
+  }
+
+  .media-preview-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: var(--bg-base);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .media-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+  }
+
+  .media-card:hover .media-thumb {
+    transform: scale(1.04);
+  }
+
+  .media-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    gap: 6px;
+  }
+
+  .media-placeholder.video {
+    color: #3b82f6;
+  }
+
+  .media-placeholder.doc {
+    color: #10b981;
+  }
+
+  .media-ext {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .video-duration-badge {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #ffffff;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    backdrop-filter: blur(4px);
+  }
+
+  .media-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity var(--transition);
+    backdrop-filter: blur(2px);
+  }
+
+  .media-card:hover .media-overlay {
+    opacity: 1;
+  }
+
+  .btn-download-overlay {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent);
+    color: #ffffff;
+    border: none;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+
+  .btn-download-overlay:hover {
+    transform: scale(1.05);
+    background: var(--accent-bright);
+  }
+
+  .btn-download-overlay.downloaded {
+    background: var(--success);
+  }
+
+  .media-info {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .media-title {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .media-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+  }
+
+  /* Toggle switch style */
+  .toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+
+  .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background-color: var(--border-subtle);
+    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 24px;
+  }
+
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+
+  input:checked + .slider {
+    background-color: var(--accent);
+  }
+
+  input:checked + .slider:before {
+    transform: translateX(20px);
+  }
+
+  .badge-success {
+    background: var(--success-dim);
+    color: var(--success);
+    font-weight: 600;
+  }
 </style>
 
 
