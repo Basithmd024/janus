@@ -371,7 +371,7 @@ class MainActivity : ComponentActivity() {
         janusService?.triggerManualSync()
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 102) {
             janusService?.triggerManualSync()
