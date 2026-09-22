@@ -102,7 +102,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isMediaAccessEnabled(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
         } else {
             ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
@@ -1223,7 +1226,7 @@ class MainActivity : ComponentActivity() {
                                                 isCheckingUpdate = true
                                                 updateInfoState = checkMobileAppUpdate()
                                                 isCheckingUpdate = false
-                                                Toast.makeText(context, if (updateInfoState?.isUpdateAvailable == true) "Update found: v${updateInfoState?.latestVersion}!" else "Janus is up to date! (v1.0.0)", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, if (updateInfoState?.isUpdateAvailable == true) "Update found: v${updateInfoState?.latestVersion}!" else "Janus is up to date! (v${BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     ) {
@@ -1794,16 +1797,16 @@ class MainActivity : ComponentActivity() {
 
 
 data class AppUpdateInfo(
-    val currentVersion: String = "1.0.0",
-    val latestVersion: String = "1.0.0",
+    val currentVersion: String = BuildConfig.VERSION_NAME,
+    val latestVersion: String = BuildConfig.VERSION_NAME,
     val isUpdateAvailable: Boolean = false,
     val releaseNotes: List<String> = emptyList(),
-    val apkUrl: String = "https://github.com/Basithmd024/janus/releases/download/v1.0.0/app-debug.apk",
+    val apkUrl: String = "https://github.com/Basithmd024/janus/releases/download/v${BuildConfig.VERSION_NAME}/app-debug.apk",
     val releaseUrl: String = "https://github.com/Basithmd024/janus/releases/latest"
 )
 
 suspend fun checkMobileAppUpdate(): AppUpdateInfo = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-    val current = "2.0.0"
+    val current = BuildConfig.VERSION_NAME
     try {
         val client = okhttp3.OkHttpClient.Builder()
             .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)

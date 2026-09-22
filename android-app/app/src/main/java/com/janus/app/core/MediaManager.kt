@@ -35,18 +35,24 @@ class MediaManager(private val context: Context) {
         val root = JsonObject()
         val items = JsonArray()
 
-        // 1. Verify runtime storage / media permission
-        val hasMediaPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val isDownloadOnly = (category.equals("download", ignoreCase = true) || category.equals("downloads", ignoreCase = true) || category.equals("documents", ignoreCase = true))
+
+        // 1. Verify runtime storage / media permission (not required for MediaStore.Downloads on Android 10+)
+        val hasMediaPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
         } else {
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
         }
 
-        if (!hasMediaPermission) {
+        if (!hasMediaPermission && !(isDownloadOnly && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)) {
             Log.w(TAG, "Storage / Media permission not granted on Android device")
             root.addProperty("error", "PERMISSION_DENIED")
-            root.addProperty("error_message", "Storage or Photos permission not granted on phone.")
+            root.addProperty("error_message", "Storage or Photos permission not granted on phone. Please allow Photos and Media permission in Janus app settings.")
             root.add("items", items)
             root.addProperty("count", 0)
             root.addProperty("category", category)
@@ -78,15 +84,15 @@ class MediaManager(private val context: Context) {
 
                 if (isScreenshotQuery) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        selection = "(${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} = ? OR ${MediaStore.Images.Media.DISPLAY_NAME} LIKE ? OR ${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?)"
-                        selectionArgs = arrayOf("Screenshots", "%Screenshot%", "%Screenshots%")
+                        selection = "(${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} LIKE ? OR ${MediaStore.Images.Media.DISPLAY_NAME} LIKE ? OR ${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?)"
+                        selectionArgs = arrayOf("%Screenshot%", "%Screenshot%", "%Screenshots%")
                     } else {
-                        selection = "(${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} = ? OR ${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?)"
-                        selectionArgs = arrayOf("Screenshots", "%Screenshot%")
+                        selection = "(${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} LIKE ? OR ${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?)"
+                        selectionArgs = arrayOf("%Screenshot%", "%Screenshot%")
                     }
                 } else if (isPhotoQuery) {
-                    selection = "(${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} != ? AND ${MediaStore.Images.Media.DISPLAY_NAME} NOT LIKE ?)"
-                    selectionArgs = arrayOf("Screenshots", "%Screenshot%")
+                    selection = "(${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} IS NULL OR (${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} NOT LIKE ? AND ${MediaStore.Images.Media.DISPLAY_NAME} NOT LIKE ?))"
+                    selectionArgs = arrayOf("%Screenshot%", "%Screenshot%")
                 }
 
                 try {
@@ -130,7 +136,7 @@ class MediaManager(private val context: Context) {
                                 }
 
                                 // Generate small thumbnail for fast preview (up to 8 items to ensure near-instant < 300ms response)
-                                if (count < 8) {
+                                if (count < 24) {
                                     val thumb = generateThumbnail(contentUri, isVideo = false)
                                     if (thumb != null) {
                                         item.addProperty("thumbnail", thumb)
@@ -195,7 +201,7 @@ class MediaManager(private val context: Context) {
                                     addProperty("duration_ms", duration)
                                 }
 
-                                if (count < 2) {
+                                if (count < 6) {
                                     val thumb = generateThumbnail(contentUri, isVideo = true)
                                     if (thumb != null) {
                                         item.addProperty("thumbnail", thumb)
@@ -372,7 +378,7 @@ class MediaManager(private val context: Context) {
     private fun generateThumbnail(uri: Uri, isVideo: Boolean): String? {
         return try {
             val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                context.contentResolver.loadThumbnail(uri, Size(96, 96), null)
+                context.contentResolver.loadThumbnail(uri, Size(128, 128), null)
             } else {
                 null
             }

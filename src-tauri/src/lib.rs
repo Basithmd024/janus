@@ -1267,7 +1267,7 @@ async fn request_media_list(
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
         if clients.is_empty() {
-            return Err("No connected device to request media from".to_string());
+            return Err("No connected phone found on your local network. Make sure Janus is open on your phone and both devices are connected to the same Wi-Fi.".to_string());
         }
         for tx in clients.values() {
             let msg = axum::extract::ws::Message::Text(json.clone());

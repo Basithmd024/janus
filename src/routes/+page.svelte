@@ -441,11 +441,11 @@
       const onlinePaired = pairedDevicesList.find((d) => d.online);
       if (onlinePaired) return onlinePaired;
 
-      // 2. Check if any discovered device is online or active
-      const onlineDiscovered = discoveredDevices.find((d) => (d as any).online || d.paired);
+      // 2. Check if any discovered device is online
+      const onlineDiscovered = discoveredDevices.find((d) => (d as any).online);
       if (onlineDiscovered) return onlineDiscovered;
 
-      // 3. If any device exists in discoveredDevices, treat it as active
+      // 3. Fallback to first discovered device if any
       if (discoveredDevices.length > 0) return discoveredDevices[0];
 
       return null;
@@ -560,17 +560,21 @@
       if (isLoadingMedia) {
         isLoadingMedia = false;
         if (mediaItems.length === 0) {
-          showToast("Media request timed out. Check phone connection and retry.", "info");
+          showToast("Media request timed out. Make sure your phone is unlocked and Janus is running.", "info");
         }
       }
-    }, 15000);
+    }, 12000);
 
     try {
       await invoke("request_media_list", { category, limit: 100, offset: 0 });
     } catch (e: any) {
       isLoadingMedia = false;
-      if (mediaFetchTimer) clearTimeout(mediaFetchTimer);
+      if (mediaFetchTimer) {
+        clearTimeout(mediaFetchTimer);
+        mediaFetchTimer = null;
+      }
       console.warn("request_media_list error:", e);
+      showToast(String(e), "error");
     }
   }
 
@@ -636,12 +640,13 @@
   let filteredMediaItems = $derived(
     mediaItems.filter((item) => {
       const matchesSearch = !mediaSearchQuery || item.name.toLowerCase().includes(mediaSearchQuery.toLowerCase());
+      const itemCat = (item.category || "").toLowerCase();
       const matchesCategory =
         mediaCategory === "all" ||
-        (mediaCategory === "photos" && item.category === "image") ||
-        (mediaCategory === "screenshots" && item.category === "screenshot") ||
-        (mediaCategory === "videos" && item.category === "video") ||
-        (mediaCategory === "downloads" && item.category === "download");
+        (mediaCategory === "photos" && (itemCat === "image" || itemCat === "photo" || itemCat === "photos")) ||
+        (mediaCategory === "screenshots" && (itemCat === "screenshot" || itemCat === "screenshots")) ||
+        (mediaCategory === "videos" && (itemCat === "video" || itemCat === "videos")) ||
+        (mediaCategory === "downloads" && (itemCat === "download" || itemCat === "downloads" || itemCat === "document" || itemCat === "documents"));
       return matchesSearch && matchesCategory;
     })
   );
@@ -703,18 +708,24 @@
   async function loadConnectedDevices() {
     try {
       const active = await invoke<Device[]>("get_connected_devices");
+      const activeFps = new Set(active.map((d) => d.fingerprint));
+      
+      let updated = discoveredDevices.filter((d) => activeFps.has(d.fingerprint));
       for (const dev of active) {
         const isPaired = pairedDevices.some((p) => p.fingerprint === dev.fingerprint);
-        const existing = discoveredDevices.find((d) => d.fingerprint === dev.fingerprint);
-        if (existing) {
-          discoveredDevices = discoveredDevices.map((d) =>
-            d.fingerprint === dev.fingerprint
-              ? { ...d, ...dev, paired: isPaired || d.paired }
-              : d
-          );
+        const existingIdx = updated.findIndex((d) => d.fingerprint === dev.fingerprint);
+        const entry: Device = { ...dev, paired: isPaired, online: true } as any;
+        if (existingIdx >= 0) {
+          updated[existingIdx] = { ...updated[existingIdx], ...entry };
         } else {
-          discoveredDevices = [...discoveredDevices, { ...dev, paired: isPaired }];
+          updated.push(entry);
         }
+      }
+      discoveredDevices = updated;
+
+      if (discoveredDevices.length === 0) {
+        deviceBattery = null;
+        deviceSignal = null;
       }
     } catch (e) {
       console.error("Failed to load connected devices:", e);
@@ -2562,8 +2573,16 @@
             <div class="empty-icon">
               <svg width="56" height="56" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="1.2"/><circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" stroke-width="1.2"/><polyline points="21 15 16 10 5 21" stroke="currentColor" stroke-width="1.2"/></svg>
             </div>
-            <h3>Device Offline</h3>
-            <p>Connect your phone on the same Wi-Fi network to browse and download its media files.</p>
+            <h3>Phone Disconnected</h3>
+            <p>Open Janus on your phone and ensure both devices are on the same Wi-Fi network.</p>
+            <div style="margin-top: 1rem; display: flex; gap: 8px; justify-content: center;">
+              <button class="btn btn-secondary btn-sm" onclick={loadConnectedDevices}>
+                Refresh Status
+              </button>
+              <button class="btn btn-primary btn-sm" onclick={() => showPairingModal = true}>
+                Pair Phone
+              </button>
+            </div>
           </div>
         {:else if isLoadingMedia && mediaItems.length === 0}
           <div class="empty-state" style="margin-top: 2rem;">
@@ -2577,7 +2596,14 @@
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" stroke-width="1.2"/></svg>
             </div>
             <h3>No Media Found</h3>
-            <p>{mediaSearchQuery ? "No files matched your search filter." : "No files found in this category on your phone."}</p>
+            <p>{mediaSearchQuery ? "No files matched your search filter." : "No files found in this category on your phone. Make sure Photos & Files access is granted in the Janus Android app."}</p>
+            {#if !mediaSearchQuery}
+              <div style="margin-top: 1rem; display: flex; gap: 8px; justify-content: center;">
+                <button class="btn btn-secondary btn-sm" onclick={() => fetchMediaList(mediaCategory)} disabled={isLoadingMedia}>
+                  Retry Fetching
+                </button>
+              </div>
+            {/if}
           </div>
         {:else}
           <div class="media-grid">
