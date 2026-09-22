@@ -540,7 +540,7 @@
     mediaCategory = category;
     isLoadingMedia = true;
     if (mediaFetchTimer) clearTimeout(mediaFetchTimer);
-    // Safety 5s fallback timeout to prevent stuck 'Loading...' button
+    // Safety fallback timeout to prevent stuck 'Loading...' button
     mediaFetchTimer = setTimeout(() => {
       if (isLoadingMedia) {
         isLoadingMedia = false;
@@ -548,7 +548,7 @@
           showToast("Media request timed out. Check phone connection and retry.", "info");
         }
       }
-    }, 5000);
+    }, 15000);
 
     try {
       await invoke("request_media_list", { category, limit: 100, offset: 0 });
@@ -624,6 +624,7 @@
       const matchesCategory =
         mediaCategory === "all" ||
         (mediaCategory === "photos" && item.category === "image") ||
+        (mediaCategory === "screenshots" && item.category === "screenshot") ||
         (mediaCategory === "videos" && item.category === "video") ||
         (mediaCategory === "downloads" && item.category === "download");
       return matchesSearch && matchesCategory;
@@ -1489,6 +1490,11 @@
     const unlistenMediaList = await listen<any>("media-list-received", (event) => {
       if (mediaFetchTimer) clearTimeout(mediaFetchTimer);
       isLoadingMedia = false;
+      if (event.payload?.error === "PERMISSION_DENIED") {
+        showToast("Photos & files permission needed on phone. Please grant permission in Janus app.", "error");
+        mediaItems = [];
+        return;
+      }
       if (event.payload && event.payload.items) {
         mediaItems = event.payload.items;
       }

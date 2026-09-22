@@ -92,6 +92,40 @@ class MainActivity : ComponentActivity() {
     private var lastCompletedFileName = mutableStateOf<String?>(null)
     private var lastCompletedFileSize = mutableStateOf<String?>(null)
     private var notificationAccessEnabled = mutableStateOf(false)
+    private var mediaAccessEnabled = mutableStateOf(false)
+
+    private val mediaPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        mediaAccessEnabled.value = isMediaAccessEnabled()
+    }
+
+    private fun isMediaAccessEnabled(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun requestMediaPermissions() {
+        val perms = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+                perms.add(Manifest.permission.READ_MEDIA_IMAGES)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED) {
+                perms.add(Manifest.permission.READ_MEDIA_VIDEO)
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                perms.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }
+        if (perms.isNotEmpty()) {
+            mediaPermissionLauncher.launch(perms.toTypedArray())
+        }
+    }
     private var isScreenMirroringActive = mutableStateOf(false)
     private var accessibilityEnabled = mutableStateOf(false)
 
@@ -199,6 +233,16 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 requiredPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+                requiredPermissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED) {
+                requiredPermissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                requiredPermissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
         }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
@@ -319,6 +363,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         notificationAccessEnabled.value = isNotificationServiceEnabled()
+        mediaAccessEnabled.value = isMediaAccessEnabled()
         isScreenMirroringActive.value = com.janus.app.core.JanusScreenCastService.isRunning
         accessibilityEnabled.value = isAccessibilityServiceEnabled()
     }
@@ -767,6 +812,48 @@ class MainActivity : ComponentActivity() {
                                                 startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                                             } else {
                                                 Toast.makeText(this@MainActivity, "Disable in Settings to stop mirroring", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    )
+                                }
+
+                                HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.5f))
+
+                                // Photos & Files Media Access
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Share,
+                                            contentDescription = "Photos & Media Access",
+                                            tint = if (mediaAccessEnabled.value) MaterialTheme.colorScheme.primary else Color.Gray
+                                        )
+                                        Column {
+                                            Text("Photos & Media Files", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                            Text(
+                                                text = if (mediaAccessEnabled.value) "Active" else "Requires permission",
+                                                fontSize = 12.sp,
+                                                color = if (mediaAccessEnabled.value) Color(0xFF10B981) else Color.Gray
+                                            )
+                                        }
+                                    }
+                                    Switch(
+                                        checked = mediaAccessEnabled.value,
+                                        onCheckedChange = { checked ->
+                                            if (checked) {
+                                                requestMediaPermissions()
+                                            } else {
+                                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                    data = Uri.fromParts("package", packageName, null)
+                                                }
+                                                startActivity(intent)
                                             }
                                         }
                                     )

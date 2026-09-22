@@ -1,7 +1,9 @@
 package com.janus.app.core
 
+import android.Manifest
 import android.content.ContentUris
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -9,6 +11,7 @@ import android.provider.MediaStore
 import android.util.Base64
 import android.util.Log
 import android.util.Size
+import androidx.core.content.ContextCompat
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import java.io.ByteArrayOutputStream
@@ -32,6 +35,24 @@ class MediaManager(private val context: Context) {
         val root = JsonObject()
         val items = JsonArray()
 
+        // 1. Verify runtime storage / media permission
+        val hasMediaPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+
+        if (!hasMediaPermission) {
+            Log.w(TAG, "Storage / Media permission not granted on Android device")
+            root.addProperty("error", "PERMISSION_DENIED")
+            root.addProperty("error_message", "Storage or Photos permission not granted on phone.")
+            root.add("items", items)
+            root.addProperty("count", 0)
+            root.addProperty("category", category)
+            return root
+        }
+
         try {
             val resolver = context.contentResolver
 
@@ -49,7 +70,8 @@ class MediaManager(private val context: Context) {
                     MediaStore.Images.Media.MIME_TYPE,
                     MediaStore.Images.Media.BUCKET_DISPLAY_NAME
                 )
-                val sortOrder = "${MediaStore.Images.Media.DATE_MODIFIED} DESC LIMIT $limit OFFSET $offset"
+                // Clean sort order without LIMIT or OFFSET in SQL string to avoid IllegalArgumentException on Android 10+
+                val sortOrder = "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
 
                 var selection: String? = null
                 var selectionArgs: Array<String>? = null
@@ -63,60 +85,66 @@ class MediaManager(private val context: Context) {
                         selectionArgs = arrayOf("Screenshots", "%Screenshot%")
                     }
                 } else if (isPhotoQuery) {
-                    // Filter out screenshots from pure photos tab if possible
                     selection = "(${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} != ? AND ${MediaStore.Images.Media.DISPLAY_NAME} NOT LIKE ?)"
                     selectionArgs = arrayOf("Screenshots", "%Screenshot%")
                 }
 
-                resolver.query(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    imageProjection,
-                    selection,
-                    selectionArgs,
-                    sortOrder
-                )?.use { cursor ->
-                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                    val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-                    val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
-                    val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
-                    val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.MIME_TYPE)
-                    val bucketCol = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
+                try {
+                    resolver.query(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        imageProjection,
+                        selection,
+                        selectionArgs,
+                        sortOrder
+                    )?.use { cursor ->
+                        val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                        val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+                        val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
+                        val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
+                        val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.MIME_TYPE)
+                        val bucketCol = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
 
-                    var count = 0
-                    while (cursor.moveToNext() && count < limit) {
-                        val id = cursor.getLong(idCol)
-                        val name = cursor.getString(nameCol) ?: "image_$id.jpg"
-                        val size = cursor.getLong(sizeCol)
-                        val dateModified = cursor.getLong(dateCol)
-                        val mime = cursor.getString(mimeCol) ?: "image/jpeg"
-                        val bucketName = if (bucketCol != -1) cursor.getString(bucketCol) ?: "" else ""
-                        val isScreenshot = bucketName.equals("Screenshots", ignoreCase = true) ||
-                                           name.contains("Screenshot", ignoreCase = true) ||
-                                           name.contains("Screen_Shot", ignoreCase = true)
+                        if (cursor.moveToPosition(offset)) {
+                            var count = 0
+                            do {
+                                val id = cursor.getLong(idCol)
+                                val name = cursor.getString(nameCol) ?: "image_$id.jpg"
+                                val size = cursor.getLong(sizeCol)
+                                val dateModified = cursor.getLong(dateCol)
+                                val mime = cursor.getString(mimeCol) ?: "image/jpeg"
+                                val bucketName = if (bucketCol != -1) cursor.getString(bucketCol) ?: "" else ""
+                                val isScreenshot = bucketName.equals("Screenshots", ignoreCase = true) ||
+                                                   name.contains("Screenshot", ignoreCase = true) ||
+                                                   name.contains("Screen_Shot", ignoreCase = true)
 
-                        val itemCategory = if (isScreenshot) "screenshot" else "image"
-                        val contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
+                                val itemCategory = if (isScreenshot) "screenshot" else "image"
+                                val contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
 
-                        val item = JsonObject().apply {
-                            addProperty("id", id.toString())
-                            addProperty("name", name)
-                            addProperty("size", size)
-                            addProperty("date_modified", dateModified)
-                            addProperty("mime_type", mime)
-                            addProperty("category", itemCategory)
+                                val item = JsonObject().apply {
+                                    addProperty("id", id.toString())
+                                    addProperty("name", name)
+                                    addProperty("size", size)
+                                    addProperty("date_modified", dateModified)
+                                    addProperty("mime_type", mime)
+                                    addProperty("category", itemCategory)
+                                }
+
+                                // Generate small thumbnail for fast preview (up to 8 items to ensure near-instant < 300ms response)
+                                if (count < 8) {
+                                    val thumb = generateThumbnail(contentUri, isVideo = false)
+                                    if (thumb != null) {
+                                        item.addProperty("thumbnail", thumb)
+                                    }
+                                }
+
+                                items.add(item)
+                                count++
+                                if (count >= limit) break
+                            } while (cursor.moveToNext())
                         }
-
-                        // Generate small thumbnail for fast preview
-                        if (count < 30) {
-                            val thumb = generateThumbnail(contentUri, isVideo = false)
-                            if (thumb != null) {
-                                item.addProperty("thumbnail", thumb)
-                            }
-                        }
-
-                        items.add(item)
-                        count++
                     }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error querying images MediaStore", e)
                 }
             }
 
@@ -130,51 +158,58 @@ class MediaManager(private val context: Context) {
                     MediaStore.Video.Media.MIME_TYPE,
                     MediaStore.Video.Media.DURATION
                 )
-                val sortOrder = "${MediaStore.Video.Media.DATE_MODIFIED} DESC LIMIT $limit OFFSET $offset"
-                resolver.query(
-                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                    videoProjection,
-                    null,
-                    null,
-                    sortOrder
-                )?.use { cursor ->
-                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                    val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
-                    val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
-                    val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_MODIFIED)
-                    val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
-                    val durCol = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
+                val sortOrder = "${MediaStore.Video.Media.DATE_MODIFIED} DESC"
+                try {
+                    resolver.query(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                        videoProjection,
+                        null,
+                        null,
+                        sortOrder
+                    )?.use { cursor ->
+                        val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                        val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                        val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+                        val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_MODIFIED)
+                        val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
+                        val durCol = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
 
-                    var count = 0
-                    while (cursor.moveToNext() && count < limit) {
-                        val id = cursor.getLong(idCol)
-                        val name = cursor.getString(nameCol) ?: "video_$id.mp4"
-                        val size = cursor.getLong(sizeCol)
-                        val dateModified = cursor.getLong(dateCol)
-                        val mime = cursor.getString(mimeCol) ?: "video/mp4"
-                        val duration = if (durCol != -1) cursor.getLong(durCol) else 0L
-                        val contentUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+                        if (cursor.moveToPosition(offset)) {
+                            var count = 0
+                            do {
+                                val id = cursor.getLong(idCol)
+                                val name = cursor.getString(nameCol) ?: "video_$id.mp4"
+                                val size = cursor.getLong(sizeCol)
+                                val dateModified = cursor.getLong(dateCol)
+                                val mime = cursor.getString(mimeCol) ?: "video/mp4"
+                                val duration = if (durCol != -1) cursor.getLong(durCol) else 0L
+                                val contentUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
 
-                        val item = JsonObject().apply {
-                            addProperty("id", id.toString())
-                            addProperty("name", name)
-                            addProperty("size", size)
-                            addProperty("date_modified", dateModified)
-                            addProperty("mime_type", mime)
-                            addProperty("category", "video")
-                            addProperty("duration_ms", duration)
+                                val item = JsonObject().apply {
+                                    addProperty("id", id.toString())
+                                    addProperty("name", name)
+                                    addProperty("size", size)
+                                    addProperty("date_modified", dateModified)
+                                    addProperty("mime_type", mime)
+                                    addProperty("category", "video")
+                                    addProperty("duration_ms", duration)
+                                }
+
+                                if (count < 2) {
+                                    val thumb = generateThumbnail(contentUri, isVideo = true)
+                                    if (thumb != null) {
+                                        item.addProperty("thumbnail", thumb)
+                                    }
+                                }
+
+                                items.add(item)
+                                count++
+                                if (count >= limit) break
+                            } while (cursor.moveToNext())
                         }
-
-                        if (count < 20) {
-                            val thumb = generateThumbnail(contentUri, isVideo = true)
-                            if (thumb != null) {
-                                item.addProperty("thumbnail", thumb)
-                            }
-                        }
-
-                        items.add(item)
-                        count++
                     }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error querying videos MediaStore", e)
                 }
             }
 
@@ -189,7 +224,7 @@ class MediaManager(private val context: Context) {
                     MediaStore.Downloads.DATE_MODIFIED,
                     MediaStore.Downloads.MIME_TYPE
                 )
-                val sortOrder = "${MediaStore.Downloads.DATE_MODIFIED} DESC LIMIT $limit OFFSET $offset"
+                val sortOrder = "${MediaStore.Downloads.DATE_MODIFIED} DESC"
                 try {
                     resolver.query(
                         MediaStore.Downloads.EXTERNAL_CONTENT_URI,
@@ -204,24 +239,27 @@ class MediaManager(private val context: Context) {
                         val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Downloads.DATE_MODIFIED)
                         val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Downloads.MIME_TYPE)
 
-                        var count = 0
-                        while (cursor.moveToNext() && count < limit) {
-                            val id = cursor.getLong(idCol)
-                            val name = cursor.getString(nameCol) ?: "download_$id"
-                            val size = cursor.getLong(sizeCol)
-                            val dateModified = cursor.getLong(dateCol)
-                            val mime = cursor.getString(mimeCol) ?: "application/octet-stream"
+                        if (cursor.moveToPosition(offset)) {
+                            var count = 0
+                            do {
+                                val id = cursor.getLong(idCol)
+                                val name = cursor.getString(nameCol) ?: "download_$id"
+                                val size = cursor.getLong(sizeCol)
+                                val dateModified = cursor.getLong(dateCol)
+                                val mime = cursor.getString(mimeCol) ?: "application/octet-stream"
 
-                            val item = JsonObject().apply {
-                                addProperty("id", id.toString())
-                                addProperty("name", name)
-                                addProperty("size", size)
-                                addProperty("date_modified", dateModified)
-                                addProperty("mime_type", mime)
-                                addProperty("category", "download")
-                            }
-                            items.add(item)
-                            count++
+                                val item = JsonObject().apply {
+                                    addProperty("id", id.toString())
+                                    addProperty("name", name)
+                                    addProperty("size", size)
+                                    addProperty("date_modified", dateModified)
+                                    addProperty("mime_type", mime)
+                                    addProperty("category", "download")
+                                }
+                                items.add(item)
+                                count++
+                                if (count >= limit) break
+                            } while (cursor.moveToNext())
                         }
                     }
                 } catch (e: Exception) {
@@ -334,21 +372,21 @@ class MediaManager(private val context: Context) {
     private fun generateThumbnail(uri: Uri, isVideo: Boolean): String? {
         return try {
             val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                context.contentResolver.loadThumbnail(uri, Size(128, 128), null)
+                context.contentResolver.loadThumbnail(uri, Size(96, 96), null)
             } else {
                 null
             }
 
             if (bitmap != null) {
                 val stream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 60, stream)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 50, stream)
                 val bytes = stream.toByteArray()
                 bitmap.recycle()
                 Base64.encodeToString(bytes, Base64.NO_WRAP)
             } else {
                 null
             }
-        } catch (e: Exception) {
+        } catch (_: Throwable) {
             null
         }
     }
