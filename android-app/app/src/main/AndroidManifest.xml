@@ -10,6 +10,8 @@
 
     <!-- Camera permission for QR scanning -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <!-- Background and service permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -50,7 +52,7 @@
 
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="barcode_ui" />
+            android:value="barcode" />
 
         <activity
             android:name="com.janus.app.MainActivity"

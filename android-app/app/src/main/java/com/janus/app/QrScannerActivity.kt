@@ -1,16 +1,22 @@
 package com.janus.app
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.provider.Settings
 import android.util.Log
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
@@ -33,6 +39,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -43,10 +50,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +75,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -87,39 +100,87 @@ class QrScannerActivity : ComponentActivity() {
     private lateinit var cameraExecutor: ExecutorService
     private var camera: Camera? = null
     private val isScanned = AtomicBoolean(false)
+    private var hasCameraPermission = mutableStateOf(false)
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasCameraPermission.value = isGranted
+        if (!isGranted) {
+            Toast.makeText(this, "Camera permission is required to scan QR codes", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
+        checkCameraPermission()
+        if (!hasCameraPermission.value) {
+            requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+
         setContent {
             var isTorchOn by remember { mutableStateOf(false) }
 
             Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
-                QrScannerScreen(
-                    isTorchOn = isTorchOn,
-                    onToggleTorch = {
-                        isTorchOn = !isTorchOn
-                        camera?.cameraControl?.enableTorch(isTorchOn)
-                    },
-                    onBack = { finish() },
-                    onQrCodeScanned = { rawResult ->
-                        if (isScanned.compareAndSet(false, true)) {
-                            triggerHaptic()
-                            val data = Intent().apply {
-                                putExtra(EXTRA_QR_RESULT, rawResult)
+                if (hasCameraPermission.value) {
+                    QrScannerScreen(
+                        isTorchOn = isTorchOn,
+                        onToggleTorch = {
+                            isTorchOn = !isTorchOn
+                            try {
+                                camera?.cameraControl?.enableTorch(isTorchOn)
+                            } catch (e: Exception) {
+                                Log.w("QrScanner", "Failed to toggle torch", e)
                             }
-                            setResult(RESULT_OK, data)
-                            finish()
-                        }
-                    },
-                    onBindCamera = { cam ->
-                        camera = cam
-                    },
-                    cameraExecutor = cameraExecutor
-                )
+                        },
+                        onBack = { finish() },
+                        onQrCodeScanned = { rawResult ->
+                            if (isScanned.compareAndSet(false, true)) {
+                                triggerHaptic()
+                                val data = Intent().apply {
+                                    putExtra(EXTRA_QR_RESULT, rawResult)
+                                }
+                                setResult(RESULT_OK, data)
+                                finish()
+                            }
+                        },
+                        onBindCamera = { cam ->
+                            camera = cam
+                        },
+                        cameraExecutor = cameraExecutor
+                    )
+                } else {
+                    CameraPermissionDeniedScreen(
+                        onRequestPermission = {
+                            requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        },
+                        onOpenSettings = {
+                            try {
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", packageName, null)
+                                }
+                                startActivity(intent)
+                            } catch (_: Exception) {}
+                        },
+                        onBack = { finish() }
+                    )
+                }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkCameraPermission()
+    }
+
+    private fun checkCameraPermission() {
+        hasCameraPermission.value = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun triggerHaptic() {
@@ -147,6 +208,90 @@ class QrScannerActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_QR_RESULT = "qr_result"
+    }
+}
+
+@Composable
+fun CameraPermissionDeniedScreen(
+    onRequestPermission: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onBack: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0F172A))
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .background(Color(0x22EF4444), CircleShape)
+                    .border(2.dp, Color(0xFFEF4444), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "Camera Permission Required",
+                    tint = Color(0xFFF87171),
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Camera Permission Required",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Janus requires camera access to scan the pairing QR code displayed on your Mac.",
+                color = Color(0xFF94A3B8),
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp
+            )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Button(
+                onClick = onRequestPermission,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(50.dp)
+            ) {
+                Text("Allow Camera Access", color = Color.White, fontWeight = FontWeight.SemiBold)
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedButton(
+                onClick = onOpenSettings,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(50.dp)
+            ) {
+                Text("Open System Settings", color = Color(0xFF94A3B8))
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            TextButton(
+                onClick = onBack
+            ) {
+                Text("Cancel", color = Color(0xFF64748B))
+            }
+        }
     }
 }
 
@@ -184,72 +329,75 @@ fun QrScannerScreen(
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                     scaleType = PreviewView.ScaleType.FILL_CENTER
+                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                 }
 
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
                 cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
+                    try {
+                        val cameraProvider = cameraProviderFuture.get()
 
-                    val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
-                    }
+                        val preview = Preview.Builder().build().also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
+                        }
 
-                    val imageAnalysis = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-
-                    val barcodeScanner = BarcodeScanning.getClient(
-                        BarcodeScannerOptions.Builder()
-                            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                        val imageAnalysis = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build()
-                    )
 
-                    val zxingReader = MultiFormatReader().apply {
-                        val hints = mapOf(
-                            DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
-                            DecodeHintType.TRY_HARDER to true
+                        val barcodeScanner = BarcodeScanning.getClient(
+                            BarcodeScannerOptions.Builder()
+                                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                                .build()
                         )
-                        setHints(hints)
-                    }
 
-                    @OptIn(ExperimentalGetImage::class)
-                    imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                        val mediaImage = imageProxy.image
-                        if (mediaImage != null) {
-                            val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-                            val image = InputImage.fromMediaImage(mediaImage, rotationDegrees)
+                        @OptIn(ExperimentalGetImage::class)
+                        imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                            try {
+                                val mediaImage = imageProxy.image
+                                if (mediaImage != null) {
+                                    val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                                    val image = InputImage.fromMediaImage(mediaImage, rotationDegrees)
 
-                            barcodeScanner.process(image)
-                                .addOnSuccessListener { barcodes ->
-                                    var handled = false
-                                    for (barcode in barcodes) {
-                                        val raw = barcode.rawValue
-                                        if (!raw.isNullOrBlank()) {
-                                            handled = true
-                                            onQrCodeScanned(raw)
-                                            break
+                                    barcodeScanner.process(image)
+                                        .addOnSuccessListener { barcodes ->
+                                            var handled = false
+                                            for (barcode in barcodes) {
+                                                val raw = barcode.rawValue
+                                                if (!raw.isNullOrBlank()) {
+                                                    handled = true
+                                                    onQrCodeScanned(raw)
+                                                    break
+                                                }
+                                            }
+                                            if (!handled) {
+                                                tryZxingFallback(imageProxy, onQrCodeScanned)
+                                            }
                                         }
-                                    }
-                                    if (!handled) {
-                                        // Try robust fallback
-                                        tryZxingFallback(imageProxy, zxingReader, onQrCodeScanned)
-                                    }
-                                }
-                                .addOnFailureListener {
-                                    tryZxingFallback(imageProxy, zxingReader, onQrCodeScanned)
-                                }
-                                .addOnCompleteListener {
+                                        .addOnFailureListener {
+                                            tryZxingFallback(imageProxy, onQrCodeScanned)
+                                        }
+                                        .addOnCompleteListener {
+                                            imageProxy.close()
+                                        }
+                                } else {
+                                    tryZxingFallback(imageProxy, onQrCodeScanned)
                                     imageProxy.close()
                                 }
-                        } else {
-                            tryZxingFallback(imageProxy, zxingReader, onQrCodeScanned)
-                            imageProxy.close()
+                            } catch (e: Exception) {
+                                tryZxingFallback(imageProxy, onQrCodeScanned)
+                                imageProxy.close()
+                            }
                         }
-                    }
 
-                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                        val cameraSelector = if (cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
+                            CameraSelector.DEFAULT_BACK_CAMERA
+                        } else if (cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
+                            CameraSelector.DEFAULT_FRONT_CAMERA
+                        } else {
+                            CameraSelector.DEFAULT_BACK_CAMERA
+                        }
 
-                    try {
                         cameraProvider.unbindAll()
                         val cam = cameraProvider.bindToLifecycle(
                             lifecycleOwner,
@@ -380,7 +528,6 @@ fun QrScannerScreen(
 
 private fun tryZxingFallback(
     imageProxy: ImageProxy,
-    reader: MultiFormatReader,
     onQrCodeScanned: (String) -> Unit
 ) {
     try {
@@ -418,13 +565,20 @@ private fun tryZxingFallback(
             PlanarYUVLuminanceSource(yBytes, width, height, 0, 0, width, height, false)
         }
 
+        val reader = MultiFormatReader().apply {
+            val hints = mapOf(
+                DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+                DecodeHintType.TRY_HARDER to true,
+                DecodeHintType.CHARACTER_SET to "UTF-8"
+            )
+            setHints(hints)
+        }
+
         val bitmap = BinaryBitmap(HybridBinarizer(source))
         val result = reader.decodeWithState(bitmap)
         if (!result.text.isNullOrBlank()) {
             onQrCodeScanned(result.text)
         }
     } catch (_: Exception) {
-    } finally {
-        reader.reset()
     }
 }
