@@ -15,7 +15,10 @@
     "dev:clean": "lsof -ti :1420 | xargs kill -9 2>/dev/null || true && vite dev",
     "tauri:clean": "lsof -ti :1420 | xargs kill -9 2>/dev/null || true && tauri dev",
     "master": "npx svelte-kit sync && lsof -ti :1420 | xargs kill -9 2>/dev/null || true && tauri dev",
-    "master:build": "npx svelte-kit sync && npm run build && tauri build"
+    "master:build": "npx svelte-kit sync && npm run build && tauri build",
+    "build:app": "npx svelte-kit sync && npm run build && npx tauri build --bundles app --no-sign",
+    "install:app": "npm run build:app && pkill -9 -f /Applications/janus.app/Contents/MacOS/janus || true && rm -rf /Applications/janus.app && cp -R src-tauri/target/release/bundle/macos/janus.app /Applications/",
+    "restart": "pkill -9 -f /Applications/janus.app/Contents/MacOS/janus || true && open /Applications/janus.app"
   },
   "license": "MIT",
   "dependencies": {

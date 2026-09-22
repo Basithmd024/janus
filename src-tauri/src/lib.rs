@@ -1090,7 +1090,7 @@ async fn submit_feedback(
 #[tauri::command]
 #[allow(dead_code)]
 async fn check_for_updates() -> Result<UpdateInfo, String> {
-    let current_version = "1.0.0".to_string();
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
     let client = reqwest::Client::builder()
         .user_agent("Janus-Desktop-App")
         .timeout(std::time::Duration::from_secs(6))

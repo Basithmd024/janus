@@ -294,6 +294,16 @@
     }
   }
 
+  async function handleBannerUpdate() {
+    showUpdateModal = true;
+    if (!updateInfo) {
+      await checkForUpdates(true);
+    }
+    if (updateInfo?.download_url && !isDownloadingUpdate) {
+      startUpdateDownload();
+    }
+  }
+
   async function checkForUpdates(manual = false) {
     if (isCheckingUpdate) return;
     
@@ -1964,7 +1974,7 @@
               </div>
             </div>
             <div class="update-banner-right">
-              <button class="btn btn-sm btn-primary" onclick={openUpdateModal}>Update Now</button>
+              <button class="btn btn-sm btn-primary" onclick={handleBannerUpdate}>Update Now</button>
             </div>
           </div>
         {/if}
@@ -5586,8 +5596,100 @@
   }
 
   .update-modal {
-    max-width: 480px;
-    width: 90%;
+    max-width: 520px;
+    width: 92%;
+    background: #110e1f;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    padding: 1.5rem;
+    box-sizing: border-box;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6);
+    position: relative;
+    z-index: 5001;
+  }
+
+  :global(:root[data-theme="light"]) .update-modal {
+    background: #ffffff;
+    border-color: #e2e8f0;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+    width: 100%;
+  }
+
+  .modal-header h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .modal-sub {
+    margin: 2px 0 0 0;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .btn-close {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 6px 10px;
+    border-radius: 6px;
+    transition: all 0.2s;
+  }
+
+  .btn-close:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .update-progress-container {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .progress-label-line {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  .progress-bar-track {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: #2563eb;
+    border-radius: 4px;
+    transition: width 0.3s ease;
   }
 
   .update-badge-icon {
@@ -6552,7 +6654,7 @@
 <!-- IN-APP UPDATE MODAL                                     -->
 <!-- ═══════════════════════════════════════════════════════ -->
 {#if showUpdateModal}
-  <div class="modal-backdrop" onclick={() => !isDownloadingUpdate && (showUpdateModal = false)} role="dialog" aria-modal="true">
+  <div class="modal-overlay" onclick={() => !isDownloadingUpdate && (showUpdateModal = false)} role="dialog" aria-modal="true">
     <div class="modal-card update-modal" onclick={(e) => e.stopPropagation()} role="document">
       {#if updateInfo}
       <div class="modal-header">
