@@ -1,18 +1,18 @@
 {
-  "version": "2.2.3",
+  "version": "2.2.4",
   "min_version": "1.0.0",
   "release_date": "2026-09-22",
-  "title": "Janus v2.2.3 \u2014 Real-Time Call Logs, SMS, and Screen Mirror Live Stream",
+  "title": "Janus v2.2.4 \u2014 Fix Mobile App Version Check & Real-Time Phone Media Browser",
   "notes": [
-    "Fix Screen Mirroring: Removed BlackoutActivity so real live phone screen streams to Mac instead of black box",
-    "Fix Call History & SMS Fetching: Resolved SQLite query crash caused by strict SQL validator rejecting LIMIT token",
-    "Real-Time Sync: Added ContentObservers for calls and SMS with debounced real-time push to Mac",
-    "Auto-Sync on Connect & Call End: Instantly pushes call logs and SMS on connection and call termination",
-    "UI Polish: Prevented stale media timeout notifications from leaking into other tabs"
+    "Fix Mobile Version Check: Resolved persistent update popup on phone by dynamically binding BuildConfig.VERSION_NAME",
+    "Fix Media Loading: Added Android 14 visual user selected permission support and bypassed scoped storage restrictions on downloads",
+    "Fix Photo Query: Handled null bucket name logic in SQLite query so camera roll pictures are returned accurately",
+    "Real-Time Connection Sync: Desktop UI now prunes disconnected clients and accurately shows real-time phone connection status",
+    "Enhanced Media Preview: Boosted preview thumbnails from 8 to 24 items with crisp 128x128 resolution"
   ],
   "downloads": {
-    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v2.2.3/app-debug.apk",
-    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v2.2.3/Janus.dmg",
-    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v2.2.3"
+    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v2.2.4/app-debug.apk",
+    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v2.2.4/Janus.dmg",
+    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v2.2.4"
   }
 }
