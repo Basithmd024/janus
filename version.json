@@ -1,19 +1,18 @@
 {
-  "version": "2.2.0",
+  "version": "2.2.3",
   "min_version": "1.0.0",
-  "release_date": "2026-09-21",
-  "title": "Janus v2.2.0 \u2014 Full In-Call Management from Mac & Phone Screenshots",
+  "release_date": "2026-09-22",
+  "title": "Janus v2.2.3 \u2014 Real-Time Call Logs, SMS, and Screen Mirror Live Stream",
   "notes": [
-    "Full In-Call Management from Mac: Answer remotely with auto-speakerphone activation (works seamlessly without Bluetooth)",
-    "Hardware In-Call Controls: Toggle phone speakerphone, mute/unmute mic, and send DTMF keypad digits from Mac",
-    "Live In-Call HUD: Active call banner with caller name, number, duration, and control buttons",
-    "Dedicated Screenshots Tab: Browse, preview, and download phone screenshots from Media & Files tab",
-    "Capture Phone Screenshot: 1-click button on Mac to capture live screenshot on phone",
-    "Fix: Added 5s safety timeout to prevent stuck Loading state in Media browser"
+    "Fix Screen Mirroring: Removed BlackoutActivity so real live phone screen streams to Mac instead of black box",
+    "Fix Call History & SMS Fetching: Resolved SQLite query crash caused by strict SQL validator rejecting LIMIT token",
+    "Real-Time Sync: Added ContentObservers for calls and SMS with debounced real-time push to Mac",
+    "Auto-Sync on Connect & Call End: Instantly pushes call logs and SMS on connection and call termination",
+    "UI Polish: Prevented stale media timeout notifications from leaking into other tabs"
   ],
   "downloads": {
-    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v2.2.0/app-debug.apk",
-    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v2.2.0/Janus.dmg",
-    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v2.2.0"
+    "android_apk": "https://github.com/Basithmd024/janus/releases/download/v2.2.3/app-debug.apk",
+    "macos_dmg": "https://github.com/Basithmd024/janus/releases/download/v2.2.3/Janus.dmg",
+    "release_url": "https://github.com/Basithmd024/janus/releases/tag/v2.2.3"
   }
 }

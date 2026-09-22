@@ -453,12 +453,18 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             let _ = state.app_handle.emit("calls-list", packet.payload);
         }
         "sms.list" => {
-            if let Some(messages) = packet.payload.get("messages").and_then(|v| v.as_array()) {
+            let messages_opt = packet
+                .payload
+                .get("messages")
+                .or_else(|| packet.payload.get("sms"))
+                .and_then(|v| v.as_array());
+            if let Some(messages) = messages_opt {
                 *state.sms_messages.lock().unwrap() = messages.clone();
             }
             let sms_count = packet
                 .payload
                 .get("messages")
+                .or_else(|| packet.payload.get("sms"))
                 .and_then(|v| v.as_array())
                 .map(|a| a.len())
                 .unwrap_or(0);

@@ -58,6 +58,13 @@ class JanusService : Service() {
     // Periodic telemetry timer
     private var telemetryHandler: android.os.Handler? = null
     private var telemetryRunnable: Runnable? = null
+
+    // Real-time Content Observers for Calls and SMS
+    private var callLogObserver: android.database.ContentObserver? = null
+    private var smsObserver: android.database.ContentObserver? = null
+    private val debounceHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingCallSyncRunnable: Runnable? = null
+    private var pendingSmsSyncRunnable: Runnable? = null
     
     private var phoneStateListener: android.telephony.PhoneStateListener? = null
     private var telephonyCallback: android.telephony.TelephonyCallback? = null
@@ -158,6 +165,14 @@ class JanusService : Service() {
                 )
                 connectionManager?.sendPacket(packet)
                 audioBridge?.stop()
+
+                // Delay 800ms to allow Android OS CallLogProvider to commit the finished call record
+                debounceHandler.postDelayed({
+                    if (isConnected) {
+                        Log.d("JanusService", "📞 Call ended — syncing call log in real-time")
+                        syncCalls()
+                    }
+                }, 800)
             }
         }
     }
@@ -210,6 +225,8 @@ class JanusService : Service() {
         // Read initial signal level immediately
         readInitialSignal()
 
+        registerContentObservers()
+
         Log.d("JanusService", "📡 Initial telemetry: battery=$currentBatteryLevel%, charging=$currentIsCharging, signal=$currentSignalLevel")
     }
 
@@ -234,6 +251,7 @@ class JanusService : Service() {
                         sendTelemetryUpdate()
                         startClipboardMonitoring()
                         startPeriodicTelemetry()
+                        registerContentObservers()
                         syncCalls()
                         syncSms()
                     } else {
@@ -716,6 +734,8 @@ class JanusService : Service() {
             toneGenerator = null
         } catch (_: Exception) {}
 
+        unregisterContentObservers()
+
         // Unregister phone state receiver
         try {
             unregisterReceiver(phoneStateReceiver)
@@ -1003,7 +1023,99 @@ class JanusService : Service() {
         }
     }
 
-    private fun syncCalls() {
+    fun registerContentObservers() {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CALL_LOG) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            if (callLogObserver == null) {
+                try {
+                    callLogObserver = object : android.database.ContentObserver(debounceHandler) {
+                        override fun onChange(selfChange: Boolean, uri: android.net.Uri?) {
+                            super.onChange(selfChange, uri)
+                            Log.d("JanusService", "📞 CallLog ContentObserver changed ($uri)")
+                            pendingCallSyncRunnable?.let { debounceHandler.removeCallbacks(it) }
+                            pendingCallSyncRunnable = Runnable {
+                                if (isConnected) {
+                                    Log.d("JanusService", "📞 Executing real-time CallLog sync")
+                                    syncCalls()
+                                }
+                            }
+                            debounceHandler.postDelayed(pendingCallSyncRunnable!!, 600)
+                        }
+                    }
+                    contentResolver.registerContentObserver(
+                        android.provider.CallLog.Calls.CONTENT_URI,
+                        true,
+                        callLogObserver!!
+                    )
+                    Log.d("JanusService", "📞 CallLog ContentObserver successfully registered")
+                } catch (e: Exception) {
+                    Log.e("JanusService", "Failed to register CallLog ContentObserver", e)
+                }
+            }
+        }
+
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            if (smsObserver == null) {
+                try {
+                    smsObserver = object : android.database.ContentObserver(debounceHandler) {
+                        override fun onChange(selfChange: Boolean, uri: android.net.Uri?) {
+                            super.onChange(selfChange, uri)
+                            Log.d("JanusService", "💬 SMS ContentObserver changed ($uri)")
+                            pendingSmsSyncRunnable?.let { debounceHandler.removeCallbacks(it) }
+                            pendingSmsSyncRunnable = Runnable {
+                                if (isConnected) {
+                                    Log.d("JanusService", "💬 Executing real-time SMS sync")
+                                    syncSms()
+                                }
+                            }
+                            debounceHandler.postDelayed(pendingSmsSyncRunnable!!, 600)
+                        }
+                    }
+                    contentResolver.registerContentObserver(
+                        android.net.Uri.parse("content://sms"),
+                        true,
+                        smsObserver!!
+                    )
+                    Log.d("JanusService", "💬 SMS ContentObserver successfully registered")
+                } catch (e: Exception) {
+                    Log.e("JanusService", "Failed to register SMS ContentObserver", e)
+                }
+            }
+        }
+    }
+
+    fun unregisterContentObservers() {
+        callLogObserver?.let {
+            try {
+                contentResolver.unregisterContentObserver(it)
+            } catch (e: Exception) {
+                Log.e("JanusService", "Failed to unregister CallLog observer", e)
+            }
+            callLogObserver = null
+        }
+        smsObserver?.let {
+            try {
+                contentResolver.unregisterContentObserver(it)
+            } catch (e: Exception) {
+                Log.e("JanusService", "Failed to unregister SMS observer", e)
+            }
+            smsObserver = null
+        }
+        pendingCallSyncRunnable?.let { debounceHandler.removeCallbacks(it) }
+        pendingSmsSyncRunnable?.let { debounceHandler.removeCallbacks(it) }
+    }
+
+    fun triggerManualSync() {
+        registerContentObservers()
+        if (isConnected) {
+            syncCalls()
+            syncSms()
+            readInitialBattery()
+            readInitialSignal()
+            sendTelemetryUpdate()
+        }
+    }
+
+    fun syncCalls() {
         if (!isConnected) return
         
         val callsArray = com.google.gson.JsonArray()
@@ -1023,7 +1135,7 @@ class JanusService : Service() {
                     projection,
                     null,
                     null,
-                    "${android.provider.CallLog.Calls.DATE} DESC LIMIT 50"
+                    "${android.provider.CallLog.Calls.DATE} DESC"
                 )?.use { cursor ->
                     val numIdx = cursor.getColumnIndex(android.provider.CallLog.Calls.NUMBER)
                     val dateIdx = cursor.getColumnIndex(android.provider.CallLog.Calls.DATE)
@@ -1031,6 +1143,7 @@ class JanusService : Service() {
                     val typeIdx = cursor.getColumnIndex(android.provider.CallLog.Calls.TYPE)
                     val nameIdx = cursor.getColumnIndex(android.provider.CallLog.Calls.CACHED_NAME)
                     
+                    var count = 0
                     while (cursor.moveToNext()) {
                         val number = if (numIdx != -1) cursor.getString(numIdx) ?: "Unknown" else "Unknown"
                         val date = if (dateIdx != -1) cursor.getLong(dateIdx) else 0L
@@ -1051,6 +1164,8 @@ class JanusService : Service() {
                             addProperty("name", if (name.isNotEmpty()) name else resolveContactName(this@JanusService, number))
                         }
                         callsArray.add(callObj)
+                        count++
+                        if (count >= 100) break
                     }
                 }
             } catch (e: Exception) {
@@ -1070,9 +1185,10 @@ class JanusService : Service() {
             payload = payload
         )
         connectionManager?.sendPacket(packet)
+        Log.d("JanusService", "📞 Synced ${callsArray.size()} calls to host")
     }
 
-    private fun syncSms() {
+    fun syncSms() {
         if (!isConnected) return
         
         val smsArray = com.google.gson.JsonArray()
@@ -1091,13 +1207,14 @@ class JanusService : Service() {
                     projection,
                     null,
                     null,
-                    "date DESC LIMIT 50"
+                    "date DESC"
                 )?.use { cursor ->
                     val addrIdx = cursor.getColumnIndex("address")
                     val dateIdx = cursor.getColumnIndex("date")
                     val bodyIdx = cursor.getColumnIndex("body")
                     val typeIdx = cursor.getColumnIndex("type")
                     
+                    var count = 0
                     while (cursor.moveToNext()) {
                         val address = if (addrIdx != -1) cursor.getString(addrIdx) ?: "Unknown" else "Unknown"
                         val date = if (dateIdx != -1) cursor.getLong(dateIdx) else 0L
@@ -1116,6 +1233,8 @@ class JanusService : Service() {
                             addProperty("name", resolveContactName(this@JanusService, address))
                         }
                         smsArray.add(smsObj)
+                        count++
+                        if (count >= 100) break
                     }
                 }
             } catch (e: Exception) {
@@ -1127,6 +1246,7 @@ class JanusService : Service() {
         
         val payload = JsonObject().apply {
             add("sms", smsArray)
+            add("messages", smsArray)
         }
         val packet = Packet(
             type = "sms.list",
@@ -1135,5 +1255,6 @@ class JanusService : Service() {
             payload = payload
         )
         connectionManager?.sendPacket(packet)
+        Log.d("JanusService", "💬 Synced ${smsArray.size()} SMS messages to host")
     }
 }

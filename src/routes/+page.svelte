@@ -517,6 +517,11 @@
   }
 
   async function selectTab(tab: string) {
+    if (tab !== "media" && mediaFetchTimer) {
+      clearTimeout(mediaFetchTimer);
+      mediaFetchTimer = null;
+      isLoadingMedia = false;
+    }
     syncLiveState();
     activeTab = tab;
     if (tab === "history") {
@@ -1670,7 +1675,7 @@
 
     const unlistenSmsList = await listen<any>("sms-list", (event) => {
       const payload = event.payload;
-      smsMessages = payload.sms || [];
+      smsMessages = payload.sms || payload.messages || [];
     });
     unlisteners.push(unlistenSmsList);
 

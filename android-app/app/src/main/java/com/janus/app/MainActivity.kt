@@ -210,6 +210,7 @@ class MainActivity : ComponentActivity() {
                     projectionLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
                 }
             }
+            s.triggerManualSync()
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
@@ -367,6 +368,14 @@ class MainActivity : ComponentActivity() {
         mediaAccessEnabled.value = isMediaAccessEnabled()
         isScreenMirroringActive.value = com.janus.app.core.JanusScreenCastService.isRunning
         accessibilityEnabled.value = isAccessibilityServiceEnabled()
+        janusService?.triggerManualSync()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 102) {
+            janusService?.triggerManualSync()
+        }
     }
 
     @Composable
