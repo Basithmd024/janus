@@ -9,7 +9,9 @@ fn main() {
 
         let build_index = std::path::Path::new("../build/index.html");
         if !build_index.exists() {
-            println!("cargo:warning=Frontend build missing. Automatically running 'npm run build'...");
+            println!(
+                "cargo:warning=Frontend build missing. Automatically running 'npm run build'..."
+            );
             let _ = std::process::Command::new("npm")
                 .arg("run")
                 .arg("build")
