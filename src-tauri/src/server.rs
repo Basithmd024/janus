@@ -49,6 +49,40 @@ pub fn show_macos_notification(title: &str, body: &str) {
     }
 }
 
+pub struct InFlightTransfer {
+    pub request_id: String,
+    pub media_id: String,
+    pub final_path: PathBuf,
+    pub part_path: PathBuf,
+    pub writer: std::io::BufWriter<std::fs::File>,
+    pub digest_ctx: ring::digest::Context,
+    pub bytes_written: u64,
+    pub total_size: u64,
+}
+
+pub fn resolve_unique_path(dir: &std::path::Path, file_name: &str) -> PathBuf {
+    let candidate = dir.join(file_name);
+    if !candidate.exists() {
+        return candidate;
+    }
+
+    let path = std::path::Path::new(file_name);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+    let ext = path.extension().and_then(|e| e.to_str());
+
+    for i in 1..10000 {
+        let new_name = match ext {
+            Some(e) => format!("{} ({}).{}", stem, i, e),
+            None => format!("{} ({})", stem, i),
+        };
+        let c = dir.join(new_name);
+        if !c.exists() {
+            return c;
+        }
+    }
+    candidate
+}
+
 // Global state
 pub struct ServerState {
     pub config_dir: PathBuf,
@@ -64,6 +98,9 @@ pub struct ServerState {
     pub recent_notifications: Mutex<Vec<serde_json::Value>>,
     pub call_history: Mutex<Vec<serde_json::Value>>,
     pub sms_messages: Mutex<Vec<serde_json::Value>>,
+    pub active_file_downloads: Mutex<HashMap<String, std::io::BufWriter<std::fs::File>>>,
+    pub active_range_transfers: Mutex<HashMap<String, InFlightTransfer>>,
+    pub last_media_player_state: Mutex<Option<serde_json::Value>>,
     pub app_handle: AppHandle,
     pub clipboard_state: Arc<ClipboardState>,
 }
@@ -213,7 +250,14 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
                             }
                         }
                     }
-                    _ => break,
+                    Some(Err(e)) => {
+                        eprintln!("⚠️ WebSocket receive error for {}: {:?}", client_id, e);
+                        break;
+                    }
+                    None => {
+                        println!("WebSocket stream ended for {}", client_id);
+                        break;
+                    }
                 }
             }
         }
@@ -650,17 +694,133 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                 }
             }
         }
+        "FILE_INFO" => {
+            if let (Some(request_id), Some(name), Some(total_size), Some(offset)) = (
+                packet.payload.get("requestId").and_then(|v| v.as_str()),
+                packet.payload.get("name").and_then(|v| v.as_str()),
+                packet.payload.get("totalSize").and_then(|v| v.as_u64()),
+                packet.payload.get("offset").and_then(|v| v.as_u64()),
+            ) {
+                let media_id = packet.payload.get("mediaId").and_then(|v| v.as_str()).unwrap_or("0");
+                let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                let dir = PathBuf::from(format!("{}/Downloads/Janus", home));
+                let _ = std::fs::create_dir_all(&dir);
+
+                let safe_name = crate::protocol::sanitize_filename(name);
+                let part_name = format!("{}.{}.part", safe_name, request_id);
+                let part_path = dir.join(&part_name);
+                let final_path = resolve_unique_path(&dir, &safe_name);
+
+                let file_res = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(offset == 0)
+                    .append(offset > 0)
+                    .open(&part_path);
+
+                if let Ok(file) = file_res {
+                    let writer = std::io::BufWriter::with_capacity(512 * 1024, file);
+                    let transfer = InFlightTransfer {
+                        request_id: request_id.to_string(),
+                        media_id: media_id.to_string(),
+                        final_path,
+                        part_path,
+                        writer,
+                        digest_ctx: ring::digest::Context::new(&ring::digest::SHA256),
+                        bytes_written: offset,
+                        total_size,
+                    };
+                    state.active_range_transfers.lock().unwrap().insert(request_id.to_string(), transfer);
+                    println!("📥 Initialized resumable file transfer: {} ({} bytes, part: {})", safe_name, total_size, part_name);
+                } else {
+                    eprintln!("Failed to open part file for download: {:?}", part_path);
+                }
+            }
+            let _ = state.app_handle.emit("file-range-info", packet.payload);
+        }
+        "FILE_CHUNK" => {
+            if let (Some(request_id), Some(data_b64)) = (
+                packet.payload.get("requestId").and_then(|v| v.as_str()),
+                packet.payload.get("data").and_then(|v| v.as_str()),
+            ) {
+                use base64::Engine;
+                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data_b64) {
+                    let mut transfers = state.active_range_transfers.lock().unwrap();
+                    if let Some(transfer) = transfers.get_mut(request_id) {
+                        use std::io::Write;
+                        transfer.digest_ctx.update(&bytes);
+                        let _ = transfer.writer.write_all(&bytes);
+                        transfer.bytes_written += bytes.len() as u64;
+                    }
+                }
+            }
+            let _ = state.app_handle.emit("file-range-chunk", packet.payload);
+        }
+        "FILE_COMPLETE" => {
+            if let Some(request_id) = packet.payload.get("requestId").and_then(|v| v.as_str()) {
+                let mut transfers = state.active_range_transfers.lock().unwrap();
+                if let Some(mut transfer) = transfers.remove(request_id) {
+                    use std::io::Write;
+                    let _ = transfer.writer.flush();
+                    drop(transfer.writer); // Flush and close file handle
+
+                    let calculated_sha256 = transfer.digest_ctx.finish();
+                    let sha_hex = calculated_sha256.as_ref().iter().map(|b| format!("{:02x}", b)).collect::<String>();
+
+                    if let Some(expected_sha) = packet.payload.get("sha256").and_then(|v| v.as_str()) {
+                        if !expected_sha.is_empty() && expected_sha.to_lowercase() != sha_hex.to_lowercase() {
+                            eprintln!("⚠️ SHA-256 checksum mismatch for {}: expected {}, got {}", request_id, expected_sha, sha_hex);
+                        } else {
+                            println!("✅ SHA-256 verified for {}: {}", request_id, sha_hex);
+                        }
+                    }
+
+                    // Atomically rename .part file to final sanitized path
+                    if std::fs::rename(&transfer.part_path, &transfer.final_path).is_ok() {
+                        let final_name = transfer.final_path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+                        println!("🎉 File download complete: {:?}", transfer.final_path);
+                        show_macos_notification(
+                            "📁 File Download Complete",
+                            &format!("Saved {} to Downloads/Janus", final_name),
+                        );
+                    }
+                }
+            }
+            let _ = state.app_handle.emit("file-range-complete", packet.payload);
+        }
+        "FILE_ERROR" => {
+            if let Some(request_id) = packet.payload.get("requestId").and_then(|v| v.as_str()) {
+                state.active_range_transfers.lock().unwrap().remove(request_id);
+            }
+            eprintln!("⚠️ FILE_ERROR from phone: {}", packet.payload);
+            let _ = state.app_handle.emit("file-range-error", packet.payload);
+        }
+        "THUMBNAIL_DATA" => {
+            let _ = state.app_handle.emit("thumbnail-data-received", packet.payload);
+        }
+        "MEDIA_CHANGE_EVENT" => {
+            println!("📸 Received real-time MEDIA_CHANGE_EVENT from phone");
+            let _ = state.app_handle.emit("media-change-event", packet.payload);
+        }
+        "SYNC_CHANGES_RESPONSE" => {
+            let _ = state.app_handle.emit("sync-changes-response", packet.payload);
+        }
+        "media.player.state" => {
+            *state.last_media_player_state.lock().unwrap() = Some(packet.payload.clone());
+            let _ = state.app_handle.emit("media-player-state-changed", packet.payload);
+        }
         "media.list.response" => {
             let item_count = packet
                 .payload
                 .get("count")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
-            println!("📸 Received media list from Android: {} items", item_count);
+            let payload_size = serde_json::to_string(&packet.payload).map(|s| s.len()).unwrap_or(0);
+            println!("📸 Received media list from Android: {} items, payload size: {} bytes", item_count, payload_size);
             let _ = state.app_handle.emit("media-list-received", packet.payload);
         }
         "media.fetch.chunk" => {
-            if let (Some(_fetch_id), Some(file_name), Some(data_b64), Some(chunk_index)) = (
+            if let (Some(fetch_id), Some(file_name), Some(data_b64), Some(chunk_index)) = (
                 packet.payload.get("fetch_id").and_then(|v| v.as_str()),
                 packet.payload.get("file_name").and_then(|v| v.as_str()),
                 packet.payload.get("data").and_then(|v| v.as_str()),
@@ -673,29 +833,30 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
                     let _ = std::fs::create_dir_all(&dir);
                     let file_path = format!("{}/{}", dir, file_name);
 
-                    use std::fs::OpenOptions;
                     use std::io::Write;
-                    let file_res = if chunk_index == 0 {
-                        OpenOptions::new()
+                    let mut downloads = state.active_file_downloads.lock().unwrap();
+                    let writer = downloads.entry(fetch_id.to_string()).or_insert_with(|| {
+                        let file = std::fs::OpenOptions::new()
                             .create(true)
                             .write(true)
-                            .truncate(true)
+                            .truncate(chunk_index == 0)
+                            .append(chunk_index > 0)
                             .open(&file_path)
-                    } else {
-                        OpenOptions::new()
-                            .create(true)
-                            .append(true)
-                            .open(&file_path)
-                    };
-
-                    if let Ok(mut f) = file_res {
-                        let _ = f.write_all(&bytes);
-                    }
+                            .expect("Failed to open destination file");
+                        std::io::BufWriter::with_capacity(512 * 1024, file)
+                    });
+                    let _ = writer.write_all(&bytes);
                 }
             }
             let _ = state.app_handle.emit("media-fetch-chunk", packet.payload);
         }
         "media.fetch.done" => {
+            if let Some(fetch_id) = packet.payload.get("fetch_id").and_then(|v| v.as_str()) {
+                use std::io::Write;
+                if let Some(mut writer) = state.active_file_downloads.lock().unwrap().remove(fetch_id) {
+                    let _ = writer.flush();
+                }
+            }
             if let Some(file_name) = packet.payload.get("file_name").and_then(|v| v.as_str()) {
                 let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
                 let file_path = format!("{}/Downloads/Janus/{}", home, file_name);
@@ -708,6 +869,9 @@ async fn handle_packet(packet: Packet, client_id: &str, state: &SharedState) {
             let _ = state.app_handle.emit("media-fetch-done", packet.payload);
         }
         "media.fetch.error" => {
+            if let Some(fetch_id) = packet.payload.get("fetch_id").and_then(|v| v.as_str()) {
+                state.active_file_downloads.lock().unwrap().remove(fetch_id);
+            }
             eprintln!("⚠️ Media fetch error from phone: {}", packet.payload);
             let _ = state.app_handle.emit("media-fetch-error", packet.payload);
         }

@@ -1266,6 +1266,7 @@ async fn request_media_list(
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
+        println!("📤 Sending media.list request to {} connected client(s)", clients.len());
         if clients.is_empty() {
             return Err("No connected phone found on your local network. Make sure Janus is open on your phone and both devices are connected to the same Wi-Fi.".to_string());
         }
@@ -1315,6 +1316,200 @@ async fn request_media_fetch(
     } else {
         Err("Failed to serialize media fetch packet".to_string())
     }
+}
+
+#[tauri::command]
+async fn request_file_range(
+    state: State<'_, SharedState>,
+    request_id: String,
+    media_id: String,
+    category: String,
+    offset: u64,
+    length: u64,
+) -> Result<String, String> {
+    let packet = crate::protocol::Packet {
+        r#type: "GET_FILE_RANGE".to_string(),
+        id: request_id.clone(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({
+            "requestId": request_id,
+            "mediaId": media_id,
+            "category": category,
+            "offset": offset,
+            "length": length,
+        }),
+    };
+
+    if let Ok(json) = serde_json::to_string(&packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        if clients.is_empty() {
+            return Err("No connected phone to download from".to_string());
+        }
+        for tx in clients.values() {
+            let msg = axum::extract::ws::Message::Text(json.clone());
+            let _ = tx.send(msg);
+        }
+        Ok("File range requested".to_string())
+    } else {
+        Err("Failed to serialize file range request".to_string())
+    }
+}
+
+#[tauri::command]
+async fn request_thumbnail(
+    state: State<'_, SharedState>,
+    request_id: String,
+    media_id: String,
+    category: String,
+    width: Option<u32>,
+    height: Option<u32>,
+) -> Result<String, String> {
+    let packet = crate::protocol::Packet {
+        r#type: "GET_THUMBNAIL".to_string(),
+        id: request_id.clone(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({
+            "requestId": request_id,
+            "mediaId": media_id,
+            "category": category,
+            "width": width.unwrap_or(128),
+            "height": height.unwrap_or(128),
+        }),
+    };
+
+    if let Ok(json) = serde_json::to_string(&packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        for tx in clients.values() {
+            let msg = axum::extract::ws::Message::Text(json.clone());
+            let _ = tx.send(msg);
+        }
+        Ok("Thumbnail requested".to_string())
+    } else {
+        Err("Failed to serialize thumbnail request".to_string())
+    }
+}
+
+#[tauri::command]
+async fn cancel_file_transfer(
+    state: State<'_, SharedState>,
+    request_id: String,
+) -> Result<String, String> {
+    state.active_range_transfers.lock().unwrap().remove(&request_id);
+
+    let packet = crate::protocol::Packet {
+        r#type: "CANCEL_TRANSFER".to_string(),
+        id: uuid::Uuid::new_v4().to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({
+            "requestId": request_id,
+        }),
+    };
+
+    if let Ok(json) = serde_json::to_string(&packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        for tx in clients.values() {
+            let msg = axum::extract::ws::Message::Text(json.clone());
+            let _ = tx.send(msg);
+        }
+        Ok("Transfer cancellation sent".to_string())
+    } else {
+        Err("Failed to serialize cancellation packet".to_string())
+    }
+}
+
+#[tauri::command]
+async fn sync_media_changes(
+    state: State<'_, SharedState>,
+    since: u64,
+) -> Result<String, String> {
+    let packet = crate::protocol::Packet {
+        r#type: "SYNC_CHANGES".to_string(),
+        id: uuid::Uuid::new_v4().to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({
+            "since": since,
+        }),
+    };
+
+    if let Ok(json) = serde_json::to_string(&packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        for tx in clients.values() {
+            let msg = axum::extract::ws::Message::Text(json.clone());
+            let _ = tx.send(msg);
+        }
+        Ok("Media sync changes requested".to_string())
+    } else {
+        Err("Failed to serialize sync changes packet".to_string())
+    }
+}
+
+#[tauri::command]
+async fn send_media_player_command(
+    state: State<'_, SharedState>,
+    action: String,
+    value: Option<f64>,
+) -> Result<String, String> {
+    let packet = crate::protocol::Packet {
+        r#type: "media.player.command".to_string(),
+        id: uuid::Uuid::new_v4().to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({
+            "action": action,
+            "value": value,
+        }),
+    };
+
+    if let Ok(json) = serde_json::to_string(&packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        if clients.is_empty() {
+            return Err("No connected phone to control music".to_string());
+        }
+        for tx in clients.values() {
+            let msg = axum::extract::ws::Message::Text(json.clone());
+            let _ = tx.send(msg);
+        }
+        Ok("Media player command sent".to_string())
+    } else {
+        Err("Failed to serialize media player command".to_string())
+    }
+}
+
+#[tauri::command]
+async fn get_media_player_state(state: State<'_, SharedState>) -> Result<Option<serde_json::Value>, String> {
+    let packet = crate::protocol::Packet {
+        r#type: "media.player.get_state".to_string(),
+        id: uuid::Uuid::new_v4().to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        payload: serde_json::json!({}),
+    };
+    if let Ok(json) = serde_json::to_string(&packet) {
+        let clients = state.active_ws_clients.lock().unwrap();
+        for tx in clients.values() {
+            let msg = axum::extract::ws::Message::Text(json.clone());
+            let _ = tx.send(msg);
+        }
+    }
+
+    let current = state.last_media_player_state.lock().unwrap().clone();
+    Ok(current)
 }
 
 #[tauri::command]
@@ -1371,6 +1566,9 @@ pub fn run() {
                 recent_notifications: Mutex::new(Vec::new()),
                 call_history: Mutex::new(Vec::new()),
                 sms_messages: Mutex::new(Vec::new()),
+                active_file_downloads: Mutex::new(HashMap::new()),
+                active_range_transfers: Mutex::new(HashMap::new()),
+                last_media_player_state: Mutex::new(None),
                 app_handle: app.handle().clone(),
                 clipboard_state: clipboard_state.clone(),
             });
@@ -1566,7 +1764,13 @@ pub fn run() {
             get_autostart_status,
             request_media_list,
             request_media_fetch,
-            open_media_folder
+            open_media_folder,
+            request_file_range,
+            request_thumbnail,
+            cancel_file_transfer,
+            sync_media_changes,
+            send_media_player_command,
+            get_media_player_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -33,20 +33,35 @@ class JanusNotificationListenerService : NotificationListenerService() {
         )
     }
 
+    private var mediaSessionManager: JanusMediaSessionManager? = null
+
+    fun getMediaSessionManager(): JanusMediaSessionManager? = mediaSessionManager
+
     override fun onListenerConnected() {
         super.onListenerConnected()
         instance = this
         Log.d(TAG, "Notification listener connected")
+        try {
+            val componentName = android.content.ComponentName(this, JanusNotificationListenerService::class.java)
+            mediaSessionManager = JanusMediaSessionManager(this, componentName)
+            mediaSessionManager?.startListening()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize media session manager", e)
+        }
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        mediaSessionManager?.stopListening()
+        mediaSessionManager = null
         instance = null
         Log.d(TAG, "Notification listener disconnected")
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        mediaSessionManager?.stopListening()
+        mediaSessionManager = null
         instance = null
     }
 

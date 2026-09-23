@@ -279,6 +279,7 @@ class ConnectionManager(
                         )
                         ws.send(gson.toJson(readyPacket))
                         Log.d("JanusConnection", "🟢 Transmitted device.ready confirmation return statement to Mac")
+                        JanusMediaSessionManager.instance?.broadcastCurrentPlaybackState()
                     } else if (packet.type == "device.unpaired") {
                         // Clear paired host from storage and pause auto-connect
                         val serverFp = packet.payload?.get("fingerprint")?.asString ?: connectedFingerprint
@@ -365,6 +366,141 @@ class ConnectionManager(
                                 )
                             }.start()
                         }
+                    } else if (packet.type == "GET_FILE_RANGE" || packet.type == "media.fetch.range") {
+                        val requestId = packet.payload?.get("requestId")?.asString ?: packet.id
+                        val mediaIdStr = packet.payload?.get("mediaId")?.asString ?: "0"
+                        val mediaId = mediaIdStr.toLongOrNull() ?: 0L
+                        val category = packet.payload?.get("category")?.asString ?: "all"
+                        val offset = packet.payload?.get("offset")?.asLong ?: 0L
+                        val length = packet.payload?.get("length")?.asLong ?: 0L
+
+                        Thread {
+                            mediaManager.getFileRange(
+                                requestId = requestId,
+                                mediaId = mediaId,
+                                category = category,
+                                offset = offset,
+                                requestedLength = length,
+                                onInfo = { name, mimeType, totalSize, actualLength ->
+                                    val infoObj = JsonObject().apply {
+                                        addProperty("type", "FILE_INFO")
+                                        addProperty("requestId", requestId)
+                                        addProperty("mediaId", mediaIdStr)
+                                        addProperty("name", name)
+                                        addProperty("mimeType", mimeType)
+                                        addProperty("size", actualLength)
+                                        addProperty("offset", offset)
+                                        addProperty("length", actualLength)
+                                        addProperty("totalSize", totalSize)
+                                    }
+                                    sendPacket(Packet(
+                                        type = "FILE_INFO",
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        timestamp = System.currentTimeMillis() / 1000,
+                                        payload = infoObj
+                                    ))
+                                },
+                                onChunk = { chunkIndex, totalChunks, base64Data, dataLength, isLast ->
+                                    val chunkObj = JsonObject().apply {
+                                        addProperty("type", "FILE_CHUNK")
+                                        addProperty("requestId", requestId)
+                                        addProperty("mediaId", mediaIdStr)
+                                        addProperty("offset", offset)
+                                        addProperty("chunkIndex", chunkIndex)
+                                        addProperty("totalChunks", totalChunks)
+                                        addProperty("data", base64Data)
+                                        addProperty("dataLength", dataLength)
+                                        addProperty("isLastChunk", isLast)
+                                    }
+                                    sendPacket(Packet(
+                                        type = "FILE_CHUNK",
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        timestamp = System.currentTimeMillis() / 1000,
+                                        payload = chunkObj
+                                    ))
+                                },
+                                onComplete = { totalBytes, sha256Hex ->
+                                    val compObj = JsonObject().apply {
+                                        addProperty("type", "FILE_COMPLETE")
+                                        addProperty("requestId", requestId)
+                                        addProperty("mediaId", mediaIdStr)
+                                        addProperty("totalBytesTransferred", totalBytes)
+                                        addProperty("sha256", sha256Hex)
+                                    }
+                                    sendPacket(Packet(
+                                        type = "FILE_COMPLETE",
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        timestamp = System.currentTimeMillis() / 1000,
+                                        payload = compObj
+                                    ))
+                                },
+                                onError = { error ->
+                                    val errObj = JsonObject().apply {
+                                        addProperty("type", "FILE_ERROR")
+                                        addProperty("requestId", requestId)
+                                        addProperty("mediaId", mediaIdStr)
+                                        addProperty("error", error)
+                                    }
+                                    sendPacket(Packet(
+                                        type = "FILE_ERROR",
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        timestamp = System.currentTimeMillis() / 1000,
+                                        payload = errObj
+                                    ))
+                                }
+                            )
+                        }.start()
+                    } else if (packet.type == "GET_THUMBNAIL" || packet.type == "media.thumbnail.get") {
+                        val requestId = packet.payload?.get("requestId")?.asString ?: packet.id
+                        val mediaIdStr = packet.payload?.get("mediaId")?.asString ?: "0"
+                        val mediaId = mediaIdStr.toLongOrNull() ?: 0L
+                        val category = packet.payload?.get("category")?.asString ?: "photo"
+                        val width = packet.payload?.get("width")?.asInt ?: 128
+                        val height = packet.payload?.get("height")?.asInt ?: 128
+
+                        Thread {
+                            val thumbB64 = mediaManager.getThumbnail(mediaId, category, width, height)
+                            val thumbPayload = JsonObject().apply {
+                                addProperty("requestId", requestId)
+                                addProperty("mediaId", mediaIdStr)
+                                if (thumbB64 != null) {
+                                    addProperty("data", thumbB64)
+                                    addProperty("mimeType", "image/jpeg")
+                                } else {
+                                    addProperty("error", "Thumbnail unavailable")
+                                }
+                            }
+                            sendPacket(Packet(
+                                type = "THUMBNAIL_DATA",
+                                id = java.util.UUID.randomUUID().toString(),
+                                timestamp = System.currentTimeMillis() / 1000,
+                                payload = thumbPayload
+                            ))
+                        }.start()
+                    } else if (packet.type == "CANCEL_TRANSFER" || packet.type == "media.transfer.cancel") {
+                        val requestId = packet.payload?.get("requestId")?.asString
+                        if (requestId != null) {
+                            mediaManager.cancelTransfer(requestId)
+                        }
+                    } else if (packet.type == "SYNC_CHANGES" || packet.type == "media.sync.changes") {
+                        val since = packet.payload?.get("since")?.asLong ?: 0L
+                        Thread {
+                            val deltaResult = mediaManager.listMedia("all", limit = 100, since = since)
+                            sendPacket(Packet(
+                                type = "SYNC_CHANGES_RESPONSE",
+                                id = packet.id,
+                                timestamp = System.currentTimeMillis() / 1000,
+                                payload = deltaResult
+                            ))
+                        }.start()
+                    } else if (packet.type == "media.player.command") {
+                        val action = packet.payload?.get("action")?.asString ?: "play_pause"
+                        val value = packet.payload?.get("value")?.asDouble
+                        val mgr = JanusMediaSessionManager.instance ?: JanusMediaSessionManager(context)
+                        mgr.handleCommand(action, value)
+                    } else if (packet.type == "media.player.get_state") {
+                        val mgr = JanusMediaSessionManager.instance ?: JanusMediaSessionManager(context)
+                        mgr.broadcastCurrentPlaybackState()
                     } else if (packet.type == "file.stream.start") {
                         val fileName = packet.payload?.get("file_name")?.asString ?: "file_${System.currentTimeMillis()}"
                         synchronized(fileStreamLock) {

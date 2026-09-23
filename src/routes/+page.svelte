@@ -202,6 +202,37 @@
   let downloadedMedia = $state<Set<string>>(new Set());
   let autostartEnabled = $state<boolean>(false);
 
+  // Range-based file download tracking
+  interface FileDownload {
+    requestId: string;
+    mediaId: string;
+    fileName: string;
+    totalSize: number;
+    bytesReceived: number;
+    speed: number;
+    status: 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled';
+    error?: string;
+    startTime: number;
+    lastChunkTime: number;
+    lastBytesSnapshot: number;
+  }
+  let activeDownloads = $state<Record<string, FileDownload>>({});
+  let thumbnailCache = $state<Record<string, string>>({});
+  let pendingThumbnails = new Set<string>();
+
+  // Music player state
+  interface MusicPlayerState {
+    title?: string;
+    artist?: string;
+    album?: string;
+    artwork?: string;
+    duration?: number;
+    position?: number;
+    isPlaying?: boolean;
+    volume?: number;
+  }
+  let musicPlayerState = $state<MusicPlayerState | null>(null);
+
   // Phone Call states
   interface IncomingCall {
     phoneNumber: string;
@@ -566,7 +597,9 @@
     }, 12000);
 
     try {
-      await invoke("request_media_list", { category, limit: 100, offset: 0 });
+      console.log("📤 Calling request_media_list for category:", category);
+      const result = await invoke("request_media_list", { category, limit: 100, offset: 0 });
+      console.log("📤 request_media_list returned:", result);
     } catch (e: any) {
       isLoadingMedia = false;
       if (mediaFetchTimer) {
@@ -595,18 +628,123 @@
   }
 
   async function downloadMedia(item: MediaItem) {
-    if (downloadingMediaId) return;
-    downloadingMediaId = item.id;
-    try {
-      await invoke("request_media_fetch", {
+    // Prevent duplicate downloads for same media
+    const existingDl = Object.values(activeDownloads).find(d => d.mediaId === item.id && (d.status === 'downloading' || d.status === 'paused'));
+    if (existingDl) return;
+
+    const requestId = crypto.randomUUID();
+    const chunkSize = 1048576; // 1 MB chunks
+
+    activeDownloads = {
+      ...activeDownloads,
+      [requestId]: {
+        requestId,
         mediaId: item.id,
-        category: item.category,
-        fileName: item.name
+        fileName: item.name,
+        totalSize: item.size || 0,
+        bytesReceived: 0,
+        speed: 0,
+        status: 'downloading',
+        startTime: Date.now(),
+        lastChunkTime: Date.now(),
+        lastBytesSnapshot: 0
+      }
+    };
+    downloadingMediaId = item.id;
+
+    try {
+      await invoke("request_file_range", {
+        requestId,
+        mediaId: item.id,
+        category: item.category || "all",
+        offset: 0,
+        length: chunkSize
       });
       showToast(`Downloading ${item.name}...`, "info");
     } catch (e: any) {
+      activeDownloads = { ...activeDownloads, [requestId]: { ...activeDownloads[requestId], status: 'error', error: String(e) } };
       downloadingMediaId = null;
-      showToast("Failed to download media: " + e, "error");
+      showToast("Failed to start download: " + e, "error");
+    }
+  }
+
+  async function pauseDownload(requestId: string) {
+    const dl = activeDownloads[requestId];
+    if (!dl || dl.status !== 'downloading') return;
+    try {
+      await invoke("cancel_file_transfer", { requestId });
+      activeDownloads = { ...activeDownloads, [requestId]: { ...dl, status: 'paused' } };
+    } catch (e: any) {
+      showToast("Failed to pause: " + e, "error");
+    }
+  }
+
+  async function resumeDownload(requestId: string) {
+    const dl = activeDownloads[requestId];
+    if (!dl || dl.status !== 'paused') return;
+    const chunkSize = 1048576;
+    activeDownloads = { ...activeDownloads, [requestId]: { ...dl, status: 'downloading', lastChunkTime: Date.now() } };
+    try {
+      await invoke("request_file_range", {
+        requestId,
+        mediaId: dl.mediaId,
+        category: "all",
+        offset: dl.bytesReceived,
+        length: chunkSize
+      });
+    } catch (e: any) {
+      activeDownloads = { ...activeDownloads, [requestId]: { ...dl, status: 'error', error: String(e) } };
+      showToast("Resume failed: " + e, "error");
+    }
+  }
+
+  async function cancelDownload(requestId: string) {
+    const dl = activeDownloads[requestId];
+    try {
+      await invoke("cancel_file_transfer", { requestId });
+    } catch (_) {}
+    const updated = { ...activeDownloads };
+    delete updated[requestId];
+    activeDownloads = updated;
+    if (dl && downloadingMediaId === dl.mediaId) downloadingMediaId = null;
+  }
+
+  function requestLazyThumbnail(mediaId: string, category: string) {
+    if (thumbnailCache[mediaId] || pendingThumbnails.has(mediaId)) return;
+    pendingThumbnails.add(mediaId);
+    invoke("request_thumbnail", {
+      requestId: `thumb-${mediaId}`,
+      mediaId,
+      category,
+      width: 256,
+      height: 256
+    }).catch(() => pendingThumbnails.delete(mediaId));
+  }
+
+  function formatSpeed(bytesPerSec: number): string {
+    if (bytesPerSec <= 0) return "--";
+    if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(0)} B/s`;
+    if (bytesPerSec < 1048576) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+    return `${(bytesPerSec / 1048576).toFixed(1)} MB/s`;
+  }
+
+  function getDownloadForMedia(mediaId: string): FileDownload | undefined {
+    return Object.values(activeDownloads).find(d => d.mediaId === mediaId);
+  }
+
+  function formatPlayerTime(ms: number | undefined): string {
+    if (!ms || ms <= 0) return "0:00";
+    const totalSec = Math.floor(ms / 1000);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return `${min}:${sec.toString().padStart(2, '0')}`;
+  }
+
+  async function sendPlayerCommand(action: string, value: number | null = null) {
+    try {
+      await invoke("send_media_player_command", { action, value: value ?? null });
+    } catch (e: any) {
+      showToast("Music control failed: " + e, "error");
     }
   }
 
@@ -650,6 +788,15 @@
       return matchesSearch && matchesCategory;
     })
   );
+
+  // Lazy thumbnail loading: request thumbnails for visible items without one
+  $effect(() => {
+    for (const item of filteredMediaItems) {
+      if (!item.thumbnail && !thumbnailCache[item.id]) {
+        requestLazyThumbnail(item.id, item.category || 'all');
+      }
+    }
+  });
 
   async function loadAudioOutputs() {
     try {
@@ -1514,6 +1661,7 @@
 
     // Media browser listeners
     const unlistenMediaList = await listen<any>("media-list-received", (event) => {
+      console.log("🎯 MEDIA-LIST-RECEIVED event fired!", JSON.stringify(event.payload).substring(0, 200));
       if (mediaFetchTimer) clearTimeout(mediaFetchTimer);
       isLoadingMedia = false;
       if (event.payload?.error === "PERMISSION_DENIED") {
@@ -1545,6 +1693,85 @@
       showToast(`Media download failed: ${event.payload?.error || 'Unknown error'}`, "error");
     });
     unlisteners.push(unlistenMediaError);
+
+    // === Range-based file transfer listeners ===
+    const unlistenFileInfo = await listen<any>("file-range-info", (event) => {
+      const p = event.payload;
+      const reqId = p?.requestId;
+      if (reqId && activeDownloads[reqId]) {
+        const totalSize = p.totalSize || p.total_size || activeDownloads[reqId].totalSize;
+        activeDownloads = { ...activeDownloads, [reqId]: { ...activeDownloads[reqId], totalSize } };
+      }
+    });
+    unlisteners.push(unlistenFileInfo);
+
+    const unlistenFileChunk = await listen<any>("file-range-chunk", (event) => {
+      const p = event.payload;
+      const reqId = p?.requestId;
+      const dl = reqId ? activeDownloads[reqId] : undefined;
+      if (!dl || dl.status !== 'downloading') return;
+      const now = Date.now();
+      const chunkLen = p.chunkSize || p.chunk_size || 0;
+      const newBytes = dl.bytesReceived + chunkLen;
+      const elapsed = Math.max((now - dl.lastChunkTime) / 1000, 0.01);
+      const speed = chunkLen / elapsed;
+      activeDownloads = {
+        ...activeDownloads,
+        [reqId]: { ...dl, bytesReceived: newBytes, speed, lastChunkTime: now, lastBytesSnapshot: newBytes }
+      };
+    });
+    unlisteners.push(unlistenFileChunk);
+
+    const unlistenFileRangeComplete = await listen<any>("file-range-complete", (event) => {
+      const p = event.payload;
+      const reqId = p?.requestId;
+      const dl = reqId ? activeDownloads[reqId] : undefined;
+      if (dl) {
+        downloadedMedia = new Set([...downloadedMedia, dl.mediaId]);
+        if (downloadingMediaId === dl.mediaId) downloadingMediaId = null;
+        const updated = { ...activeDownloads };
+        delete updated[reqId];
+        activeDownloads = updated;
+        showToast(`Downloaded ${dl.fileName} to Downloads/Janus`, "success");
+      }
+    });
+    unlisteners.push(unlistenFileRangeComplete);
+
+    const unlistenFileRangeError = await listen<any>("file-range-error", (event) => {
+      const p = event.payload;
+      const reqId = p?.requestId;
+      const dl = reqId ? activeDownloads[reqId] : undefined;
+      if (dl) {
+        if (downloadingMediaId === dl.mediaId) downloadingMediaId = null;
+        activeDownloads = { ...activeDownloads, [reqId]: { ...dl, status: 'error', error: p.error || 'Transfer failed' } };
+        showToast(`Download failed: ${p.error || 'Unknown error'}`, "error");
+      }
+    });
+    unlisteners.push(unlistenFileRangeError);
+
+    // === Lazy thumbnail data ===
+    const unlistenThumbnail = await listen<any>("thumbnail-data-received", (event) => {
+      const p = event.payload;
+      const mid = p?.mediaId || p?.media_id;
+      const data = p?.data || p?.thumbnail;
+      if (mid && data) {
+        thumbnailCache = { ...thumbnailCache, [mid]: data };
+        pendingThumbnails.delete(mid);
+      }
+    });
+    unlisteners.push(unlistenThumbnail);
+
+    // === Real-time media sync ===
+    const unlistenMediaChange = await listen<any>("media-change-event", () => {
+      fetchMediaList(mediaCategory);
+    });
+    unlisteners.push(unlistenMediaChange);
+
+    // === Music player state ===
+    const unlistenMusicState = await listen<any>("media-player-state-changed", (event) => {
+      musicPlayerState = event.payload as MusicPlayerState;
+    });
+    unlisteners.push(unlistenMusicState);
 
     const unlistenScreencast = await listen<number[]>("screencast-frame", (event) => {
       isMirroring = true;
@@ -2129,6 +2356,51 @@
               </div>
             </div>
 
+            <!-- Now Playing Music Card -->
+            <div class="overview-card music-player-card">
+              <div class="card-header-row">
+                <div class="card-icon-title">
+                  <div class="card-badge-icon pink">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M9 18V5l12-2v13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3" stroke="currentColor" stroke-width="1.5"/><circle cx="18" cy="16" r="3" stroke="currentColor" stroke-width="1.5"/></svg>
+                  </div>
+                  <h4>Now Playing</h4>
+                </div>
+                <span class="card-status-tag {musicPlayerState?.isPlaying ? 'active' : ''}">{musicPlayerState?.isPlaying ? 'Playing' : 'Paused'}</span>
+              </div>
+              {#if musicPlayerState?.title}
+                <div class="now-playing-info">
+                  {#if musicPlayerState.artwork}
+                    <img src="data:image/jpeg;base64,{musicPlayerState.artwork}" alt="Album art" class="np-artwork" />
+                  {:else}
+                    <div class="np-artwork-placeholder">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9 18V5l12-2v13" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="18" r="3" stroke="currentColor" stroke-width="1.5"/><circle cx="18" cy="16" r="3" stroke="currentColor" stroke-width="1.5"/></svg>
+                    </div>
+                  {/if}
+                  <div class="np-text">
+                    <span class="np-title">{musicPlayerState.title}</span>
+                    <span class="np-artist">{musicPlayerState.artist || 'Unknown Artist'}</span>
+                  </div>
+                </div>
+                <div class="np-controls">
+                  <button class="np-btn" onclick={() => sendPlayerCommand('prev')} title="Previous">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2"/></svg>
+                  </button>
+                  <button class="np-btn np-play-btn" onclick={() => sendPlayerCommand('play_pause')} title="{musicPlayerState.isPlaying ? 'Pause' : 'Play'}">
+                    {#if musicPlayerState.isPlaying}
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                    {:else}
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    {/if}
+                  </button>
+                  <button class="np-btn" onclick={() => sendPlayerCommand('next')} title="Next">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2"/></svg>
+                  </button>
+                </div>
+              {:else}
+                <p class="card-desc" style="text-align:center;color:var(--text-muted);">No music playing on your phone right now.</p>
+              {/if}
+            </div>
+
             <!-- Notifications Feed Card -->
             <div class="overview-card">
               <div class="card-header-row">
@@ -2551,6 +2823,41 @@
           </div>
         </div>
 
+        <!-- Active Downloads Panel -->
+        {#if Object.keys(activeDownloads).length > 0}
+          <div class="active-downloads-panel">
+            <h3 class="adp-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Active Downloads ({Object.keys(activeDownloads).length})
+            </h3>
+            {#each Object.values(activeDownloads) as dl (dl.requestId)}
+              {@const pct = dl.totalSize > 0 ? Math.round((dl.bytesReceived / dl.totalSize) * 100) : 0}
+              <div class="adp-item">
+                <div class="adp-item-info">
+                  <span class="adp-name">{dl.fileName}</span>
+                  <span class="adp-stats">
+                    {formatBytes(dl.bytesReceived)} / {formatBytes(dl.totalSize)} &middot; {pct}%
+                    {#if dl.status === 'downloading'} &middot; {formatSpeed(dl.speed)}{/if}
+                    {#if dl.status === 'paused'} &middot; <em>Paused</em>{/if}
+                    {#if dl.status === 'error'} &middot; <em class="adp-err">Error: {dl.error}</em>{/if}
+                  </span>
+                </div>
+                <div class="adp-progress-bar">
+                  <div class="adp-progress-fill {dl.status}" style="width: {pct}%;"></div>
+                </div>
+                <div class="adp-controls">
+                  {#if dl.status === 'downloading'}
+                    <button class="btn btn-sm btn-secondary" onclick={() => pauseDownload(dl.requestId)}>Pause</button>
+                  {:else if dl.status === 'paused'}
+                    <button class="btn btn-sm btn-primary" onclick={() => resumeDownload(dl.requestId)}>Resume</button>
+                  {/if}
+                  <button class="btn btn-sm btn-danger" onclick={() => cancelDownload(dl.requestId)}>Cancel</button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
         <div class="media-controls-bar">
           <div class="media-category-pills">
             <button class="cat-pill {mediaCategory === 'all' ? 'active' : ''}" onclick={() => fetchMediaList('all')}>All</button>
@@ -2608,10 +2915,13 @@
         {:else}
           <div class="media-grid">
             {#each filteredMediaItems as item (item.id)}
+              {@const thumb = item.thumbnail || thumbnailCache[item.id]}
+              {@const dl = getDownloadForMedia(item.id)}
+              {@const dlPct = dl && dl.totalSize > 0 ? Math.round((dl.bytesReceived / dl.totalSize) * 100) : 0}
               <div class="media-card">
                 <div class="media-preview-container">
-                  {#if item.thumbnail}
-                    <img src="data:image/jpeg;base64,{item.thumbnail}" alt={item.name} class="media-thumb" loading="lazy" />
+                  {#if thumb}
+                    <img src="data:image/jpeg;base64,{thumb}" alt={item.name} class="media-thumb" loading="lazy" />
                   {:else if item.category === 'video'}
                     <div class="media-placeholder video">
                       <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/></svg>
@@ -2630,7 +2940,7 @@
                   {#if item.category === 'video'}
                     <span class="video-duration-badge">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                      VIDEO
+                      {item.duration_ms ? formatPlayerTime(item.duration_ms) : 'VIDEO'}
                     </span>
                   {:else if item.category === 'screenshot'}
                     <span class="screenshot-badge">
@@ -2639,24 +2949,78 @@
                     </span>
                   {/if}
 
-                  <div class="media-overlay">
-                    <button
-                      class="btn-download-overlay {downloadedMedia.has(item.id) ? 'downloaded' : ''}"
-                      onclick={() => downloadMedia(item)}
-                      disabled={downloadingMediaId === item.id}
-                      title="Download to Mac"
-                    >
-                      {#if downloadingMediaId === item.id}
-                        <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-                      {:else if downloadedMedia.has(item.id)}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-                        <span>Saved</span>
-                      {:else}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        <span>Save to Mac</span>
-                      {/if}
-                    </button>
-                  </div>
+                  <!-- Download progress overlay -->
+                  {#if dl && dl.status === 'downloading'}
+                    <div class="media-download-progress-overlay">
+                      <div class="dl-progress-ring">
+                        <svg viewBox="0 0 44 44" width="44" height="44">
+                          <circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="3"/>
+                          <circle cx="22" cy="22" r="18" fill="none" stroke="#60a5fa" stroke-width="3"
+                            stroke-dasharray="{Math.PI * 36}"
+                            stroke-dashoffset="{Math.PI * 36 * (1 - dlPct / 100)}"
+                            stroke-linecap="round"
+                            transform="rotate(-90 22 22)"/>
+                        </svg>
+                        <span class="dl-pct-text">{dlPct}%</span>
+                      </div>
+                      <span class="dl-speed-text">{formatSpeed(dl.speed)}</span>
+                      <div class="dl-control-btns">
+                        <button class="dl-ctrl-btn" onclick={() => pauseDownload(dl.requestId)} title="Pause">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                        </button>
+                        <button class="dl-ctrl-btn danger" onclick={() => cancelDownload(dl.requestId)} title="Cancel">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                  {:else if dl && dl.status === 'paused'}
+                    <div class="media-download-progress-overlay paused">
+                      <div class="dl-progress-ring">
+                        <svg viewBox="0 0 44 44" width="44" height="44">
+                          <circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="3"/>
+                          <circle cx="22" cy="22" r="18" fill="none" stroke="#f59e0b" stroke-width="3"
+                            stroke-dasharray="{Math.PI * 36}"
+                            stroke-dashoffset="{Math.PI * 36 * (1 - dlPct / 100)}"
+                            stroke-linecap="round"
+                            transform="rotate(-90 22 22)"/>
+                        </svg>
+                        <span class="dl-pct-text">{dlPct}%</span>
+                      </div>
+                      <span class="dl-speed-text">Paused</span>
+                      <div class="dl-control-btns">
+                        <button class="dl-ctrl-btn" onclick={() => resumeDownload(dl.requestId)} title="Resume">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        </button>
+                        <button class="dl-ctrl-btn danger" onclick={() => cancelDownload(dl.requestId)} title="Cancel">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                  {:else if dl && dl.status === 'error'}
+                    <div class="media-download-progress-overlay error">
+                      <span class="dl-error-text">Failed</span>
+                      <button class="dl-ctrl-btn" onclick={() => { cancelDownload(dl.requestId); downloadMedia(item); }} title="Retry">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                      </button>
+                    </div>
+                  {:else}
+                    <div class="media-overlay">
+                      <button
+                        class="btn-download-overlay {downloadedMedia.has(item.id) ? 'downloaded' : ''}"
+                        onclick={() => downloadMedia(item)}
+                        disabled={downloadingMediaId === item.id}
+                        title="Download to Mac"
+                      >
+                        {#if downloadedMedia.has(item.id)}
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                          <span>Saved</span>
+                        {:else}
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          <span>Save to Mac</span>
+                        {/if}
+                      </button>
+                    </div>
+                  {/if}
                 </div>
 
                 <div class="media-info">
@@ -3286,6 +3650,147 @@
   </div>
 
 <style>
+  /* ═══ Active Downloads Panel ═══ */
+  .active-downloads-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .adp-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.85rem; font-weight: 600;
+    margin: 0 0 12px 0; color: var(--text-primary);
+  }
+  .adp-item {
+    padding: 10px 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .adp-item:first-of-type { border-top: none; }
+  .adp-item-info {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px; flex-wrap: wrap; gap: 4px;
+  }
+  .adp-name {
+    font-size: 0.8rem; font-weight: 600;
+    color: var(--text-primary); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; max-width: 50%;
+  }
+  .adp-stats {
+    font-size: 0.72rem; color: var(--text-muted);
+  }
+  .adp-err { color: #ef4444; }
+  .adp-progress-bar {
+    height: 4px; background: var(--bg-base);
+    border-radius: 2px; overflow: hidden; margin-bottom: 8px;
+  }
+  .adp-progress-fill {
+    height: 100%; border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+  .adp-progress-fill.downloading { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+  .adp-progress-fill.paused { background: #f59e0b; }
+  .adp-progress-fill.error { background: #ef4444; }
+  .adp-controls {
+    display: flex; gap: 6px; justify-content: flex-end;
+  }
+
+  /* ═══ Download Progress Overlay on Media Card ═══ */
+  .media-download-progress-overlay {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 6px;
+    z-index: 2;
+  }
+  .media-download-progress-overlay.paused { background: rgba(0,0,0,0.65); }
+  .media-download-progress-overlay.error { background: rgba(239,68,68,0.25); }
+  .dl-progress-ring {
+    position: relative; display: flex;
+    align-items: center; justify-content: center;
+  }
+  .dl-progress-ring svg { display: block; }
+  .dl-pct-text {
+    position: absolute; font-size: 0.7rem; font-weight: 700; color: #fff;
+  }
+  .dl-speed-text {
+    font-size: 0.65rem; color: rgba(255,255,255,0.8);
+  }
+  .dl-error-text {
+    font-size: 0.72rem; font-weight: 600; color: #fca5a5;
+  }
+  .dl-control-btns {
+    display: flex; gap: 6px; margin-top: 2px;
+  }
+  .dl-ctrl-btn {
+    background: rgba(255,255,255,0.15); border: none;
+    border-radius: 50%; width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .dl-ctrl-btn:hover { background: rgba(255,255,255,0.3); }
+  .dl-ctrl-btn.danger:hover { background: rgba(239,68,68,0.6); }
+
+  /* ═══ Now Playing Music Card ═══ */
+  .card-badge-icon.pink {
+    background: rgba(236,72,153,0.15); color: #ec4899;
+  }
+  .now-playing-info {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 0;
+  }
+  .np-artwork {
+    width: 48px; height: 48px;
+    border-radius: 8px; object-fit: cover;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .np-artwork-placeholder {
+    width: 48px; height: 48px;
+    border-radius: 8px;
+    background: var(--bg-base);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted);
+  }
+  .np-text {
+    display: flex; flex-direction: column; gap: 2px;
+    overflow: hidden; flex: 1;
+  }
+  .np-title {
+    font-size: 0.82rem; font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .np-artist {
+    font-size: 0.72rem; color: var(--text-muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .np-controls {
+    display: flex; align-items: center; justify-content: center;
+    gap: 12px; padding: 4px 0 2px;
+  }
+  .np-btn {
+    background: var(--bg-base); border: 1px solid var(--border-subtle);
+    border-radius: 50%; width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-primary); cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .np-btn:hover {
+    background: var(--accent); color: #fff;
+    border-color: var(--accent);
+  }
+  .np-play-btn {
+    width: 42px; height: 42px;
+    background: var(--accent); color: #fff;
+    border-color: var(--accent);
+  }
+  .np-play-btn:hover {
+    background: var(--accent-bright);
+    transform: scale(1.05);
+  }
   /* ════════════════════════════════════════════════
      DESIGN TOKENS — LIGHT THEME (Default, Crisp Slate & Blue)
      ════════════════════════════════════════════════ */

@@ -59,12 +59,15 @@ class JanusService : Service() {
     private var telemetryHandler: android.os.Handler? = null
     private var telemetryRunnable: Runnable? = null
 
-    // Real-time Content Observers for Calls and SMS
+    // Real-time Content Observers for Calls, SMS, and Media
     private var callLogObserver: android.database.ContentObserver? = null
     private var smsObserver: android.database.ContentObserver? = null
+    private var mediaObserver: android.database.ContentObserver? = null
     private val debounceHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var pendingCallSyncRunnable: Runnable? = null
     private var pendingSmsSyncRunnable: Runnable? = null
+    private var pendingMediaSyncRunnable: Runnable? = null
+    private var lastMediaSyncTimestamp: Long = System.currentTimeMillis() / 1000 - 300
     
     private var phoneStateListener: android.telephony.PhoneStateListener? = null
     private var telephonyCallback: android.telephony.TelephonyCallback? = null
@@ -1081,6 +1084,71 @@ class JanusService : Service() {
                 }
             }
         }
+
+        if (mediaObserver == null) {
+            try {
+                mediaObserver = object : android.database.ContentObserver(debounceHandler) {
+                    override fun onChange(selfChange: Boolean, uri: android.net.Uri?) {
+                        super.onChange(selfChange, uri)
+                        Log.d("JanusService", "📸 Media ContentObserver changed ($uri)")
+                        pendingMediaSyncRunnable?.let { debounceHandler.removeCallbacks(it) }
+                        pendingMediaSyncRunnable = Runnable {
+                            if (isConnected) {
+                                syncRecentMediaChanges()
+                            }
+                        }
+                        debounceHandler.postDelayed(pendingMediaSyncRunnable!!, 800)
+                    }
+                }
+                contentResolver.registerContentObserver(
+                    android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    true,
+                    mediaObserver!!
+                )
+                contentResolver.registerContentObserver(
+                    android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    true,
+                    mediaObserver!!
+                )
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    contentResolver.registerContentObserver(
+                        android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                        true,
+                        mediaObserver!!
+                    )
+                }
+                Log.d("JanusService", "📸 Media ContentObserver successfully registered")
+            } catch (e: Exception) {
+                Log.e("JanusService", "Failed to register Media ContentObserver", e)
+            }
+        }
+    }
+
+    fun syncRecentMediaChanges() {
+        Thread {
+            try {
+                val currentTimestamp = System.currentTimeMillis() / 1000
+                val delta = mediaManager.listMedia("all", limit = 50, since = lastMediaSyncTimestamp)
+                lastMediaSyncTimestamp = currentTimestamp
+                val items = delta.getAsJsonArray("items")
+                if (items != null && items.size() > 0) {
+                    val eventPacket = Packet(
+                        type = "MEDIA_CHANGE_EVENT",
+                        id = java.util.UUID.randomUUID().toString(),
+                        timestamp = currentTimestamp,
+                        payload = com.google.gson.JsonObject().apply {
+                            addProperty("action", "updated")
+                            add("items", items)
+                            addProperty("count", items.size())
+                        }
+                    )
+                    connectionManager?.sendPacket(eventPacket)
+                    Log.d("JanusService", "📸 Emitted MEDIA_CHANGE_EVENT with ${items.size()} updated items to Mac")
+                }
+            } catch (e: Exception) {
+                Log.e("JanusService", "Error syncing recent media changes", e)
+            }
+        }.start()
     }
 
     fun unregisterContentObservers() {
@@ -1100,8 +1168,17 @@ class JanusService : Service() {
             }
             smsObserver = null
         }
+        mediaObserver?.let {
+            try {
+                contentResolver.unregisterContentObserver(it)
+            } catch (e: Exception) {
+                Log.e("JanusService", "Failed to unregister Media observer", e)
+            }
+            mediaObserver = null
+        }
         pendingCallSyncRunnable?.let { debounceHandler.removeCallbacks(it) }
         pendingSmsSyncRunnable?.let { debounceHandler.removeCallbacks(it) }
+        pendingMediaSyncRunnable?.let { debounceHandler.removeCallbacks(it) }
     }
 
     fun triggerManualSync() {
