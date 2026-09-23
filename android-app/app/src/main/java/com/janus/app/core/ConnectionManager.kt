@@ -29,7 +29,7 @@ class ConnectionManager(
 ) {
     var onBinaryReceived: ((ByteArray) -> Unit)? = null
     var onRediscoveryRequested: (() -> Unit)? = null
-    private val mediaManager = MediaManager(context)
+    val mediaManager = MediaManager(context)
     private val fileStreamLock = Any()
     private var activeIncomingFile: java.io.File? = null
     private var activeIncomingFileStream: java.io.FileOutputStream? = null

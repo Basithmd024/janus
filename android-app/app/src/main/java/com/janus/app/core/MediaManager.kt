@@ -413,6 +413,86 @@ class MediaManager(private val context: Context) {
         }
     }
 
+    fun fetchMedia(
+        mediaId: Long,
+        category: String,
+        fetchId: String,
+        onChunk: (chunkIndex: Int, totalChunks: Int, base64Data: String, fileName: String, mimeType: String) -> Unit,
+        onDone: (fileName: String, totalBytes: Long) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val resolver = context.contentResolver
+        val contentUri: Uri = getUriForMedia(mediaId, category) ?: run {
+            onError("Unsupported category or invalid URI for ID $mediaId")
+            return
+        }
+
+        var fileName = "file_$mediaId"
+        var mimeType = "application/octet-stream"
+        var totalSize = 0L
+
+        try {
+            val projection = arrayOf(
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.SIZE,
+                MediaStore.MediaColumns.MIME_TYPE
+            )
+            resolver.query(contentUri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                    val sizeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                    val mimeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+
+                    if (nameIdx != -1) fileName = cursor.getString(nameIdx) ?: fileName
+                    if (sizeIdx != -1) totalSize = cursor.getLong(sizeIdx)
+                    if (mimeIdx != -1) mimeType = cursor.getString(mimeIdx) ?: mimeType
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read media metadata, continuing with fallback", e)
+        }
+
+        var inputStream: InputStream? = null
+        try {
+            inputStream = resolver.openInputStream(contentUri)
+            if (inputStream == null) {
+                onError("Unable to open stream for URI: $contentUri")
+                return
+            }
+
+            val totalChunks = if (totalSize > 0) {
+                ((totalSize + DEFAULT_CHUNK_SIZE - 1) / DEFAULT_CHUNK_SIZE).toInt().coerceAtLeast(1)
+            } else {
+                -1
+            }
+
+            val buffer = ByteArray(DEFAULT_CHUNK_SIZE)
+            var bytesRead: Int
+            var chunkIndex = 0
+            var cumulativeBytes = 0L
+
+            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                val chunkBytes = if (bytesRead == DEFAULT_CHUNK_SIZE) buffer else buffer.copyOf(bytesRead)
+                val base64Data = Base64.encodeToString(chunkBytes, Base64.NO_WRAP)
+                cumulativeBytes += bytesRead
+
+                onChunk(chunkIndex, totalChunks, base64Data, fileName, mimeType)
+                chunkIndex++
+            }
+
+            onDone(fileName, cumulativeBytes)
+            Log.d(TAG, "Media fetch completed for $fileName ($cumulativeBytes bytes, $chunkIndex chunks)")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to stream media: ${e.message}", e)
+            onError(e.message ?: "Stream error")
+        } finally {
+            try {
+                inputStream?.close()
+            } catch (_: Exception) {}
+        }
+    }
+
     /**
      * Reads a byte range from a media file using ContentResolver.openFileDescriptor().
      * Does not load complete file into memory.

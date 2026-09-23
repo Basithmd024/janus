@@ -1128,7 +1128,7 @@ class JanusService : Service() {
         Thread {
             try {
                 val currentTimestamp = System.currentTimeMillis() / 1000
-                val delta = mediaManager.listMedia("all", limit = 50, since = lastMediaSyncTimestamp)
+                val delta = connectionManager?.mediaManager?.listMedia("all", limit = 50, since = lastMediaSyncTimestamp) ?: return@Thread
                 lastMediaSyncTimestamp = currentTimestamp
                 val items = delta.getAsJsonArray("items")
                 if (items != null && items.size() > 0) {

@@ -1266,7 +1266,10 @@ async fn request_media_list(
 
     if let Ok(json) = serde_json::to_string(&packet) {
         let clients = state.active_ws_clients.lock().unwrap();
-        println!("📤 Sending media.list request to {} connected client(s)", clients.len());
+        println!(
+            "📤 Sending media.list request to {} connected client(s)",
+            clients.len()
+        );
         if clients.is_empty() {
             return Err("No connected phone found on your local network. Make sure Janus is open on your phone and both devices are connected to the same Wi-Fi.".to_string());
         }
@@ -1400,7 +1403,11 @@ async fn cancel_file_transfer(
     state: State<'_, SharedState>,
     request_id: String,
 ) -> Result<String, String> {
-    state.active_range_transfers.lock().unwrap().remove(&request_id);
+    state
+        .active_range_transfers
+        .lock()
+        .unwrap()
+        .remove(&request_id);
 
     let packet = crate::protocol::Packet {
         r#type: "CANCEL_TRANSFER".to_string(),
@@ -1427,10 +1434,7 @@ async fn cancel_file_transfer(
 }
 
 #[tauri::command]
-async fn sync_media_changes(
-    state: State<'_, SharedState>,
-    since: u64,
-) -> Result<String, String> {
+async fn sync_media_changes(state: State<'_, SharedState>, since: u64) -> Result<String, String> {
     let packet = crate::protocol::Packet {
         r#type: "SYNC_CHANGES".to_string(),
         id: uuid::Uuid::new_v4().to_string(),
@@ -1490,7 +1494,9 @@ async fn send_media_player_command(
 }
 
 #[tauri::command]
-async fn get_media_player_state(state: State<'_, SharedState>) -> Result<Option<serde_json::Value>, String> {
+async fn get_media_player_state(
+    state: State<'_, SharedState>,
+) -> Result<Option<serde_json::Value>, String> {
     let packet = crate::protocol::Packet {
         r#type: "media.player.get_state".to_string(),
         id: uuid::Uuid::new_v4().to_string(),

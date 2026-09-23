@@ -304,12 +304,21 @@ mod media_protocol_tests {
     #[test]
     fn test_sanitize_filename_path_traversal() {
         assert_eq!(sanitize_filename("../../etc/passwd"), "____etc_passwd");
-        assert_eq!(sanitize_filename("..\\..\\Windows\\System32"), "____Windows_System32");
-        assert_eq!(sanitize_filename("/var/root/secret.txt"), "_var_root_secret.txt");
+        assert_eq!(
+            sanitize_filename("..\\..\\Windows\\System32"),
+            "____Windows_System32"
+        );
+        assert_eq!(
+            sanitize_filename("/var/root/secret.txt"),
+            "_var_root_secret.txt"
+        );
         assert_eq!(sanitize_filename("photo:name.jpg"), "photo_name.jpg");
         assert_eq!(sanitize_filename("..."), "file_download");
         assert_eq!(sanitize_filename(""), "file_download");
-        assert_eq!(sanitize_filename("  clean_photo_123.jpg  "), "clean_photo_123.jpg");
+        assert_eq!(
+            sanitize_filename("  clean_photo_123.jpg  "),
+            "clean_photo_123.jpg"
+        );
         assert_eq!(sanitize_filename("evil\0payload.png"), "evilpayload.png");
     }
 
@@ -318,11 +327,26 @@ mod media_protocol_tests {
         let total = 5_000_000u64; // 5 MB
         assert!(validate_file_range(0, 1_048_576, total).is_ok());
         assert!(validate_file_range(1_048_576, 1_048_576, total).is_ok());
-        assert_eq!(validate_file_range(5_000_000, 1024, total), Err("Offset out of range"));
-        assert_eq!(validate_file_range(0, 0, total), Err("Requested length must be greater than zero"));
-        assert_eq!(validate_file_range(0, 20_000_000, total), Err("Requested length exceeds maximum 10MB limit"));
-        assert_eq!(validate_file_range(4_500_000, 1_000_000, total), Err("Range exceeds total file size"));
-        assert_eq!(validate_file_range(0, 100, 0), Err("File is empty (0 bytes)"));
+        assert_eq!(
+            validate_file_range(5_000_000, 1024, total),
+            Err("Offset out of range")
+        );
+        assert_eq!(
+            validate_file_range(0, 0, total),
+            Err("Requested length must be greater than zero")
+        );
+        assert_eq!(
+            validate_file_range(0, 20_000_000, total),
+            Err("Requested length exceeds maximum 10MB limit")
+        );
+        assert_eq!(
+            validate_file_range(4_500_000, 1_000_000, total),
+            Err("Range exceeds total file size")
+        );
+        assert_eq!(
+            validate_file_range(0, 100, 0),
+            Err("File is empty (0 bytes)")
+        );
     }
 
     #[test]
